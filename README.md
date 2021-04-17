@@ -17,8 +17,8 @@ to see how much this switch to constant-time operation impacts real-world worklo
 
 # Licensing
 
-[](LICENSE) contains an MIT license, which applies to files not originating
+[LICENSE](LICENSE) contains an MIT license, which applies to files not originating
 from Go's standard library.
 
-For files coming from Go's standard library, [](LICENSE_go) applies, as indicated
+For files coming from Go's standard library, [LICENSE_go](LICENSE_go) applies, as indicated
 in those files' headers.
