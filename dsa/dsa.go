@@ -19,6 +19,7 @@ import (
 	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
+	"github.com/cronokirby/safenum"
 )
 
 // Parameters represents the domain parameters for a key. These parameters can
@@ -36,7 +37,7 @@ type PublicKey struct {
 // PrivateKey represents a DSA private key.
 type PrivateKey struct {
 	PublicKey
-	X *big.Int
+	X *safenum.Nat
 }
 
 // ErrInvalidPublicKey results when a public key is not usable by this code.
@@ -160,8 +161,13 @@ func GenerateKey(priv *PrivateKey, rand io.Reader) error {
 	if priv.P == nil || priv.Q == nil || priv.G == nil {
 		return errors.New("crypto/dsa: parameters not set up before generating key")
 	}
+	pMod := safenum.ModulusFromBytes(priv.P.Bytes())
+	qNat := new(safenum.Nat)
+	qNat.SetBytes(priv.Q.Bytes())
+	gNat := new(safenum.Nat)
+	gNat.SetBytes(priv.G.Bytes())
 
-	x := new(big.Int)
+	x := new(safenum.Nat)
 	xBytes := make([]byte, priv.Q.BitLen()/8)
 
 	for {
@@ -170,14 +176,18 @@ func GenerateKey(priv *PrivateKey, rand io.Reader) error {
 			return err
 		}
 		x.SetBytes(xBytes)
-		if x.Sign() != 0 && x.Cmp(priv.Q) < 0 {
+		// This will leak the value of this condition, but static analysis shows
+		// that this condition must be true for the loop to exit anyways.
+		if !x.EqZero() && x.Cmp(qNat) < 0 {
 			break
 		}
 	}
 
 	priv.X = x
+	yNat := new(safenum.Nat)
+	yNat.Exp(gNat, x, &pMod)
 	priv.Y = new(big.Int)
-	priv.Y.Exp(priv.G, x, priv.P)
+	priv.Y.SetBytes(yNat.Bytes())
 	return nil
 }
 
@@ -208,7 +218,7 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 	// FIPS 186-3, section 4.6
 
 	n := priv.Q.BitLen()
-	if priv.Q.Sign() <= 0 || priv.P.Sign() <= 0 || priv.G.Sign() <= 0 || priv.X.Sign() <= 0 || n%8 != 0 {
+	if priv.Q.Sign() <= 0 || priv.P.Sign() <= 0 || priv.G.Sign() <= 0 || priv.X.EqZero() || n%8 != 0 {
 		err = ErrInvalidPublicKey
 		return
 	}
@@ -244,7 +254,9 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 
 		z := k.SetBytes(hash)
 
-		s = new(big.Int).Mul(priv.X, r)
+		xBig := new(big.Int)
+		xBig.SetBytes(priv.X.Bytes())
+		s = new(big.Int).Mul(xBig, r)
 		s.Add(s, z)
 		s.Mod(s, priv.Q)
 		s.Mul(s, kInv)

@@ -8,6 +8,8 @@ import (
 	"crypto/rand"
 	"math/big"
 	"testing"
+
+	"github.com/cronokirby/safenum"
 )
 
 func testSignAndVerify(t *testing.T, i int, priv *PrivateKey) {
@@ -81,6 +83,11 @@ func fromHex(s string) *big.Int {
 	return result
 }
 
+func fromHexNat(s string) *safenum.Nat {
+	big := fromHex(s)
+	return new(safenum.Nat).SetBytes(big.Bytes())
+}
+
 func TestSignAndVerify(t *testing.T) {
 	priv := PrivateKey{
 		PublicKey: PublicKey{
@@ -91,7 +98,7 @@ func TestSignAndVerify(t *testing.T) {
 			},
 			Y: fromHex("32969E5780CFE1C849A1C276D7AEB4F38A23B591739AA2FE197349AEEBD31366AEE5EB7E6C6DDB7C57D02432B30DB5AA66D9884299FAA72568944E4EEDC92EA3FBC6F39F53412FBCC563208F7C15B737AC8910DBC2D9C9B8C001E72FDC40EB694AB1F06A5A2DBD18D9E36C66F31F566742F11EC0A52E9F7B89355C02FB5D32D2"),
 		},
-		X: fromHex("5078D4D29795CBE76D3AACFE48C9AF0BCDBEE91A"),
+		X: fromHexNat("5078D4D29795CBE76D3AACFE48C9AF0BCDBEE91A"),
 	}
 
 	testSignAndVerify(t, 0, &priv)
@@ -132,7 +139,7 @@ func TestSigningWithDegenerateKeys(t *testing.T) {
 				},
 				Y: fromHex(test.y),
 			},
-			X: fromHex(test.x),
+			X: fromHexNat(test.x),
 		}
 
 		hashed := []byte("testing")
