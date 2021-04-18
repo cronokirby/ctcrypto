@@ -191,16 +191,6 @@ func GenerateKey(priv *PrivateKey, rand io.Reader) error {
 	return nil
 }
 
-// fermatInverse calculates the inverse of k in GF(P) using Fermat's method.
-// This has better constant-time properties than Euclid's method (implemented
-// in math/big.Int.ModInverse) although math/big itself isn't strictly
-// constant-time so it's not perfect.
-func fermatInverse(k, P *big.Int) *big.Int {
-	two := big.NewInt(2)
-	pMinus2 := new(big.Int).Sub(P, two)
-	return new(big.Int).Exp(k, pMinus2, P)
-}
-
 // Sign signs an arbitrary length hash (which should be the result of hashing a
 // larger message) using the private key, priv. It returns the signature as a
 // pair of integers. The security of the private key depends on the entropy of
@@ -224,9 +214,14 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 	}
 	n >>= 3
 
+	qMod := safenum.ModulusFromBytes(priv.Q.Bytes())
+	pMod := safenum.ModulusFromBytes(priv.P.Bytes())
+	gNat := new(safenum.Nat)
+	gNat.SetBytes(priv.G.Bytes())
+
 	var attempts int
 	for attempts = 10; attempts > 0; attempts-- {
-		k := new(big.Int)
+		k := new(safenum.Nat)
 		buf := make([]byte, n)
 		for {
 			_, err = io.ReadFull(rand, buf)
@@ -238,31 +233,29 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 			// requires it to be > 0 and that
 			//    ceil(log_2(Q)) mod 8 = 0
 			// Thus this loop will quickly terminate.
-			if k.Sign() > 0 && k.Cmp(priv.Q) < 0 {
+			// This leaks the value of the check, but the check being true is statically clear
+			if !k.EqZero() && k.CmpMod(&qMod) < 0 {
 				break
 			}
 		}
 
-		kInv := fermatInverse(k, priv.Q)
+		// Note that this method is done without leakage, so we don't need to use exponentiation
+		kInv := new(safenum.Nat).ModInverse(k, &qMod)
 
-		r = new(big.Int).Exp(priv.G, k, priv.P)
-		r.Mod(r, priv.Q)
-
-		if r.Sign() == 0 {
+		rNat := new(safenum.Nat).Exp(gNat, k, &pMod)
+		rNat.Mod(rNat, &qMod)
+		if rNat.EqZero() {
 			continue
 		}
+		r = new(big.Int).SetBytes(rNat.Bytes())
 
 		z := k.SetBytes(hash)
 
-		xBig := new(big.Int)
-		xBig.SetBytes(priv.X.Bytes())
-		s = new(big.Int).Mul(xBig, r)
-		s.Add(s, z)
-		s.Mod(s, priv.Q)
-		s.Mul(s, kInv)
-		s.Mod(s, priv.Q)
-
-		if s.Sign() != 0 {
+		sNat := new(safenum.Nat).ModMul(priv.X, rNat, &qMod)
+		sNat.ModAdd(sNat, z, &qMod)
+		sNat.ModMul(sNat, kInv, &qMod)
+		if !sNat.EqZero() {
+			s = new(big.Int).SetBytes(sNat.Bytes())
 			break
 		}
 	}
