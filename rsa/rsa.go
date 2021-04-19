@@ -33,6 +33,7 @@ import (
 	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
+	"github.com/cronokirby/safenum"
 )
 
 var bigZero = big.NewInt(0)
@@ -40,8 +41,8 @@ var bigOne = big.NewInt(1)
 
 // A PublicKey represents the public part of an RSA key.
 type PublicKey struct {
-	N *big.Int // modulus
-	E int      // public exponent
+	N *safenum.Modulus // modulus
+	E int              // public exponent
 }
 
 // Any methods implemented on PublicKey might need to also be implemented on
@@ -98,9 +99,9 @@ func checkPub(pub *PublicKey) error {
 
 // A PrivateKey represents an RSA key
 type PrivateKey struct {
-	PublicKey            // public part.
-	D         *big.Int   // private exponent
-	Primes    []*big.Int // prime factors of N, has >= 2 elements.
+	PublicKey                // public part.
+	D         *safenum.Nat   // private exponent
+	Primes    []*safenum.Nat // prime factors of N, has >= 2 elements.
 
 	// Precomputed contains precomputed values that speed up private
 	// operations, if available.
@@ -181,8 +182,8 @@ func (priv *PrivateKey) Decrypt(rand io.Reader, ciphertext []byte, opts crypto.D
 }
 
 type PrecomputedValues struct {
-	Dp, Dq *big.Int // D mod (P-1) (or mod Q-1)
-	Qinv   *big.Int // Q^-1 mod P
+	Dp, Dq *safenum.Nat // D mod (P-1) (or mod Q-1)
+	Qinv   *safenum.Nat // Q^-1 mod P
 
 	// CRTValues is used for the 3rd and subsequent primes. Due to a
 	// historical accident, the CRT for the first two primes is handled
@@ -193,9 +194,9 @@ type PrecomputedValues struct {
 
 // CRTValue contains the precomputed Chinese remainder theorem values.
 type CRTValue struct {
-	Exp   *big.Int // D mod (prime-1).
-	Coeff *big.Int // R·Coeff ≡ 1 mod Prime.
-	R     *big.Int // product of primes prior to this (inc p and q).
+	Exp   *safenum.Nat // D mod (prime-1).
+	Coeff *safenum.Nat // R·Coeff ≡ 1 mod Prime.
+	R     *safenum.Nat // product of primes prior to this (inc p and q).
 }
 
 // Validate performs basic sanity checks on the key.
@@ -205,16 +206,17 @@ func (priv *PrivateKey) Validate() error {
 		return err
 	}
 
+	one := new(safenum.Nat).SetUint64(1)
 	// Check that Πprimes == n.
-	modulus := new(big.Int).Set(bigOne)
+	modulus := new(safenum.Nat).SetUint64(1)
 	for _, prime := range priv.Primes {
 		// Any primes ≤ 1 will cause divide-by-zero panics later.
-		if prime.Cmp(bigOne) <= 0 {
+		if prime.Cmp(one) <= 0 {
 			return errors.New("crypto/rsa: invalid prime value")
 		}
-		modulus.Mul(modulus, prime)
+		modulus.Mul(modulus, prime, priv.N.BitLen())
 	}
-	if modulus.Cmp(priv.N) != 0 {
+	if modulus.CmpMod(priv.N) != 0 {
 		return errors.New("crypto/rsa: invalid modulus")
 	}
 
@@ -223,13 +225,13 @@ func (priv *PrivateKey) Validate() error {
 	// inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) =
 	// exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
 	// mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
-	congruence := new(big.Int)
-	de := new(big.Int).SetInt64(int64(priv.E))
-	de.Mul(de, priv.D)
+	congruence := new(safenum.Nat)
+	e := new(safenum.Nat).SetUint64(uint64(priv.E))
 	for _, prime := range priv.Primes {
-		pminus1 := new(big.Int).Sub(prime, bigOne)
-		congruence.Mod(de, pminus1)
-		if congruence.Cmp(bigOne) != 0 {
+		pminus1 := new(safenum.Nat).Sub(prime, one, prime.AnnouncedLen())
+		m := safenum.ModulusFromNat(*pminus1)
+		congruence.ModMul(priv.D, e, &m)
+		if congruence.Cmp(one) != 0 {
 			return errors.New("crypto/rsa: invalid exponents")
 		}
 	}
