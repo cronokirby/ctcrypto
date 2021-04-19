@@ -51,7 +51,7 @@ type PublicKey struct {
 // Size returns the modulus size in bytes. Raw signatures and ciphertexts
 // for or by this public key will have the same size.
 func (pub *PublicKey) Size() int {
-	return (pub.N.BitLen() + 7) / 8
+	return int((pub.N.BitLen() + 7) / 8)
 }
 
 // Equal reports whether pub and x have the same value.
@@ -160,7 +160,7 @@ func (priv *PrivateKey) Decrypt(rand io.Reader, ciphertext []byte, opts crypto.D
 
 	switch opts := opts.(type) {
 	case *OAEPOptions:
-		return DecryptOAEP(opts.Hash.New(), rand, priv, ciphertext, opts.Label)
+		return DecryptOAEP(opts.Hash.New(), priv, ciphertext, opts.Label)
 
 	case *PKCS1v15DecryptOptions:
 		if l := opts.SessionKeyLen; l > 0 {
@@ -386,8 +386,8 @@ func mgf1XOR(out []byte, hash hash.Hash, seed []byte) {
 // too large for the size of the public key.
 var ErrMessageTooLong = errors.New("crypto/rsa: message too long for RSA public key size")
 
-func encrypt(c *big.Int, pub *PublicKey, m *big.Int) *big.Int {
-	e := big.NewInt(int64(pub.E))
+func encrypt(c *safenum.Nat, pub *PublicKey, m *safenum.Nat) *safenum.Nat {
+	e := new(safenum.Nat).SetUint64(uint64(pub.E))
 	c.Exp(m, e, pub.N)
 	return c
 }
@@ -439,9 +439,9 @@ func EncryptOAEP(hash hash.Hash, random io.Reader, pub *PublicKey, msg []byte, l
 	mgf1XOR(db, hash, seed)
 	mgf1XOR(seed, hash, db)
 
-	m := new(big.Int)
+	m := new(safenum.Nat)
 	m.SetBytes(em)
-	c := encrypt(new(big.Int), pub, m)
+	c := encrypt(new(safenum.Nat), pub, m)
 
 	out := make([]byte, k)
 	return c.FillBytes(out), nil
@@ -462,80 +462,60 @@ func (priv *PrivateKey) Precompute() {
 		return
 	}
 
-	priv.Precomputed.Dp = new(big.Int).Sub(priv.Primes[0], bigOne)
-	priv.Precomputed.Dp.Mod(priv.D, priv.Precomputed.Dp)
+	one := new(safenum.Nat).SetUint64(1)
 
-	priv.Precomputed.Dq = new(big.Int).Sub(priv.Primes[1], bigOne)
-	priv.Precomputed.Dq.Mod(priv.D, priv.Precomputed.Dq)
+	priv.Precomputed.Dp = new(safenum.Nat).Sub(priv.Primes[0], one, priv.Primes[0].AnnouncedLen())
+	dpMod := safenum.ModulusFromNat(*priv.Precomputed.Dp)
+	priv.Precomputed.Dp.Mod(priv.D, &dpMod)
 
-	priv.Precomputed.Qinv = new(big.Int).ModInverse(priv.Primes[1], priv.Primes[0])
+	priv.Precomputed.Dq = new(safenum.Nat).Sub(priv.Primes[1], one, priv.Primes[1].AnnouncedLen())
+	dqMod := safenum.ModulusFromNat(*priv.Precomputed.Dq)
+	priv.Precomputed.Dq.Mod(priv.D, &dqMod)
 
-	r := new(big.Int).Mul(priv.Primes[0], priv.Primes[1])
+	privMod0 := safenum.ModulusFromNat(*priv.Primes[0])
+	priv.Precomputed.Qinv = new(safenum.Nat).ModInverse(priv.Primes[1], &privMod0)
+
+	rCap := priv.Primes[0].AnnouncedLen() + priv.Primes[1].AnnouncedLen()
+	r := new(safenum.Nat).Mul(priv.Primes[0], priv.Primes[1], rCap)
 	priv.Precomputed.CRTValues = make([]CRTValue, len(priv.Primes)-2)
 	for i := 2; i < len(priv.Primes); i++ {
 		prime := priv.Primes[i]
 		values := &priv.Precomputed.CRTValues[i-2]
 
-		values.Exp = new(big.Int).Sub(prime, bigOne)
-		values.Exp.Mod(priv.D, values.Exp)
+		values.Exp = new(safenum.Nat).Sub(prime, one, prime.AnnouncedLen())
+		expMod := safenum.ModulusFromNat(*values.Exp)
+		values.Exp.Mod(priv.D, &expMod)
 
-		values.R = new(big.Int).Set(r)
-		values.Coeff = new(big.Int).ModInverse(r, prime)
+		// TODO: Add set method to avoid going through byte here
+		values.R = new(safenum.Nat).SetBytes(r.Bytes())
+		primeMod := safenum.ModulusFromNat(*prime)
+		values.Coeff = new(safenum.Nat).ModInverse(r, &primeMod)
 
-		r.Mul(r, prime)
+		r.Mul(r, prime, r.AnnouncedLen()+prime.AnnouncedLen())
 	}
 }
 
-// decrypt performs an RSA decryption, resulting in a plaintext integer. If a
-// random source is given, RSA blinding is used.
-func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err error) {
+// decrypt performs an RSA decryption, resulting in a plaintext integer.
+func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 	// TODO(agl): can we get away with reusing blinds?
-	if c.Cmp(priv.N) > 0 {
+	if c.CmpMod(priv.N) > 0 {
 		err = ErrDecryption
 		return
 	}
-	if priv.N.Sign() == 0 {
+	// TODO: Maybe add a way to compari moduli to zero?
+	zero := safenum.ModulusFromUint64(0)
+	if priv.N.Cmp(&zero) == 0 {
 		return nil, ErrDecryption
 	}
 
-	var ir *big.Int
-	if random != nil {
-		randutil.MaybeReadByte(random)
-
-		// Blinding enabled. Blinding involves multiplying c by r^e.
-		// Then the decryption operation performs (m^e * r^e)^d mod n
-		// which equals mr mod n. The factor of r can then be removed
-		// by multiplying by the multiplicative inverse of r.
-
-		var r *big.Int
-		ir = new(big.Int)
-		for {
-			r, err = rand.Int(random, priv.N)
-			if err != nil {
-				return
-			}
-			if r.Cmp(bigZero) == 0 {
-				r = bigOne
-			}
-			ok := ir.ModInverse(r, priv.N)
-			if ok != nil {
-				break
-			}
-		}
-		bigE := big.NewInt(int64(priv.E))
-		rpowe := new(big.Int).Exp(r, bigE, priv.N) // N != 0
-		cCopy := new(big.Int).Set(c)
-		cCopy.Mul(cCopy, rpowe)
-		cCopy.Mod(cCopy, priv.N)
-		c = cCopy
-	}
-
 	if priv.Precomputed.Dp == nil {
-		m = new(big.Int).Exp(c, priv.D, priv.N)
+		m = new(safenum.Nat).Exp(c, priv.D, priv.N)
 	} else {
 		// We have the precalculated values needed for the CRT.
-		m = new(big.Int).Exp(c, priv.Precomputed.Dp, priv.Primes[0])
-		m2 := new(big.Int).Exp(c, priv.Precomputed.Dq, priv.Primes[1])
+		primeMod0 := safenum.ModulusFromNat(*priv.Primes[0])
+		primeMod1 := safenum.ModulusFromNat(*priv.Primes[1])
+		m = new(safenum.Nat).Exp(c, priv.Precomputed.Dp, &primeMod0)
+		m2 := new(safenum.Nat).Exp(c, priv.Precomputed.Dq, &primeMod1)
 		m.Sub(m, m2)
 		if m.Sign() < 0 {
 			m.Add(m, priv.Primes[0])
@@ -559,24 +539,18 @@ func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err er
 		}
 	}
 
-	if ir != nil {
-		// Unblind.
-		m.Mul(m, ir)
-		m.Mod(m, priv.N)
-	}
-
 	return
 }
 
-func decryptAndCheck(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err error) {
-	m, err = decrypt(random, priv, c)
+func decryptAndCheck(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
+	m, err = decrypt(priv, c)
 	if err != nil {
 		return nil, err
 	}
 
 	// In order to defend against errors in the CRT computation, m^e is
 	// calculated, which should match the original ciphertext.
-	check := encrypt(new(big.Int), &priv.PublicKey, m)
+	check := encrypt(new(safenum.Nat), &priv.PublicKey, m)
 	if c.Cmp(check) != 0 {
 		return nil, errors.New("rsa: internal error")
 	}
@@ -589,13 +563,9 @@ func decryptAndCheck(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int
 // Encryption and decryption of a given message must use the same hash function
 // and sha256.New() is a reasonable choice.
 //
-// The random parameter, if not nil, is used to blind the private-key operation
-// and avoid timing side-channel attacks. Blinding is purely internal to this
-// function – the random data need not match that used when encrypting.
-//
 // The label parameter must match the value given when encrypting. See
 // EncryptOAEP for details.
-func DecryptOAEP(hash hash.Hash, random io.Reader, priv *PrivateKey, ciphertext []byte, label []byte) ([]byte, error) {
+func DecryptOAEP(hash hash.Hash, priv *PrivateKey, ciphertext []byte, label []byte) ([]byte, error) {
 	if err := checkPub(&priv.PublicKey); err != nil {
 		return nil, err
 	}
@@ -605,9 +575,9 @@ func DecryptOAEP(hash hash.Hash, random io.Reader, priv *PrivateKey, ciphertext 
 		return nil, ErrDecryption
 	}
 
-	c := new(big.Int).SetBytes(ciphertext)
+	c := new(safenum.Nat).SetBytes(ciphertext)
 
-	m, err := decrypt(random, priv, c)
+	m, err := decrypt(priv, c)
 	if err != nil {
 		return nil, err
 	}
@@ -616,8 +586,6 @@ func DecryptOAEP(hash hash.Hash, random io.Reader, priv *PrivateKey, ciphertext 
 	lHash := hash.Sum(nil)
 	hash.Reset()
 
-	// We probably leak the number of leading zeros.
-	// It's not clear that we can do anything about this.
 	em := m.FillBytes(make([]byte, k))
 
 	firstByteIsZero := subtle.ConstantTimeByteEq(em[0], 0)
