@@ -9,9 +9,9 @@ import (
 	"crypto/subtle"
 	"errors"
 	"io"
-	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
+	"github.com/cronokirby/safenum"
 )
 
 // This file implements encryption and decryption using PKCS #1 v1.5 padding.
@@ -58,8 +58,8 @@ func EncryptPKCS1v15(rand io.Reader, pub *PublicKey, msg []byte) ([]byte, error)
 	em[len(em)-len(msg)-1] = 0
 	copy(mm, msg)
 
-	m := new(big.Int).SetBytes(em)
-	c := encrypt(new(big.Int), pub, m)
+	m := new(safenum.Nat).SetBytes(em)
+	c := encrypt(new(safenum.Nat), pub, m)
 
 	return c.FillBytes(em), nil
 }
@@ -143,8 +143,8 @@ func decryptPKCS1v15(rand io.Reader, priv *PrivateKey, ciphertext []byte) (valid
 		return
 	}
 
-	c := new(big.Int).SetBytes(ciphertext)
-	m, err := decrypt(rand, priv, c)
+	c := new(safenum.Nat).SetBytes(ciphertext)
+	m, err := decrypt(priv, c)
 	if err != nil {
 		return
 	}
@@ -249,8 +249,8 @@ func SignPKCS1v15(rand io.Reader, priv *PrivateKey, hash crypto.Hash, hashed []b
 	copy(em[k-tLen:k-hashLen], prefix)
 	copy(em[k-hashLen:k], hashed)
 
-	m := new(big.Int).SetBytes(em)
-	c, err := decryptAndCheck(rand, priv, m)
+	m := new(safenum.Nat).SetBytes(em)
+	c, err := decryptAndCheck(priv, m)
 	if err != nil {
 		return nil, err
 	}
@@ -282,8 +282,8 @@ func VerifyPKCS1v15(pub *PublicKey, hash crypto.Hash, hashed []byte, sig []byte)
 		return ErrVerification
 	}
 
-	c := new(big.Int).SetBytes(sig)
-	m := encrypt(new(big.Int), pub, c)
+	c := new(safenum.Nat).SetBytes(sig)
+	m := encrypt(new(safenum.Nat), pub, c)
 	em := m.FillBytes(make([]byte, k))
 	// EM = 0x00 || 0x01 || PS || 0x00 || T
 

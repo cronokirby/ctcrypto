@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/cronokirby/safenum"
 )
 
 func TestEMSAPSS(t *testing.T) {
@@ -141,7 +143,7 @@ func TestPSSGolden(t *testing.T) {
 			if !ok {
 				continue
 			}
-			key.N = bigFromHex(nHex)
+			key.N = modFromHex(nHex)
 			key.E = intFromHex(<-values)
 			// We don't care for d, p, q, dP, dQ or qInv.
 			for i := 0; i < 6; i++ {
@@ -233,12 +235,13 @@ func TestPSSSigning(t *testing.T) {
 	}
 }
 
-func bigFromHex(hex string) *big.Int {
+func modFromHex(hex string) *safenum.Modulus {
 	n, ok := new(big.Int).SetString(hex, 16)
 	if !ok {
 		panic("bad hex: " + hex)
 	}
-	return n
+	m := safenum.ModulusFromBytes(n.Bytes())
+	return &m
 }
 
 func intFromHex(hex string) int {

@@ -332,13 +332,19 @@ NextSetOfPrimes:
 			continue NextSetOfPrimes
 		}
 
-		priv.D = new(big.Int)
+		dBig := new(big.Int)
 		e := big.NewInt(int64(priv.E))
-		ok := priv.D.ModInverse(e, totient)
+		ok := dBig.ModInverse(e, totient)
+		priv.D = new(safenum.Nat).SetBytes(dBig.Bytes())
 
 		if ok != nil {
-			priv.Primes = primes
-			priv.N = n
+			natPrimes := make([]*safenum.Nat, nprimes)
+			for i := 0; i < nprimes; i++ {
+				natPrimes[i] = new(safenum.Nat).SetBytes(primes[i].Bytes())
+			}
+			priv.Primes = natPrimes
+			nMod := safenum.ModulusFromBytes(n.Bytes())
+			priv.N = &nMod
 			break
 		}
 	}
@@ -516,26 +522,20 @@ func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 		primeMod1 := safenum.ModulusFromNat(*priv.Primes[1])
 		m = new(safenum.Nat).Exp(c, priv.Precomputed.Dp, &primeMod0)
 		m2 := new(safenum.Nat).Exp(c, priv.Precomputed.Dq, &primeMod1)
-		m.Sub(m, m2)
-		if m.Sign() < 0 {
-			m.Add(m, priv.Primes[0])
-		}
-		m.Mul(m, priv.Precomputed.Qinv)
-		m.Mod(m, priv.Primes[0])
-		m.Mul(m, priv.Primes[1])
-		m.Add(m, m2)
+		m.ModSub(m, m2, &primeMod0)
+		m.ModMul(m, priv.Precomputed.Qinv, &primeMod0)
+		// TODO: Calculate the exact length necessary for m
+		m.Mul(m, priv.Primes[1], priv.N.BitLen())
+		m.Add(m, m2, priv.N.BitLen())
 
 		for i, values := range priv.Precomputed.CRTValues {
 			prime := priv.Primes[2+i]
-			m2.Exp(c, values.Exp, prime)
-			m2.Sub(m2, m)
-			m2.Mul(m2, values.Coeff)
-			m2.Mod(m2, prime)
-			if m2.Sign() < 0 {
-				m2.Add(m2, prime)
-			}
-			m2.Mul(m2, values.R)
-			m.Add(m, m2)
+			primeMod := safenum.ModulusFromNat(*prime)
+			m2.Exp(c, values.Exp, &primeMod)
+			m2.ModSub(m2, m, &primeMod)
+			m2.ModMul(m2, values.Coeff, &primeMod)
+			m2.Mul(m2, values.R, priv.N.BitLen())
+			m.Add(m, m2, priv.N.BitLen())
 		}
 	}
 
