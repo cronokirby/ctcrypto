@@ -230,7 +230,9 @@ func (priv *PrivateKey) Validate() error {
 	for _, prime := range priv.Primes {
 		pminus1 := new(safenum.Nat).Sub(prime, one, prime.AnnouncedLen())
 		m := safenum.ModulusFromNat(*pminus1)
-		congruence.ModMul(priv.D, e, m)
+		// We need to do it this way, because our modulus is even
+		congruence.Mul(priv.D, e, priv.D.AnnouncedLen()+e.AnnouncedLen())
+		congruence.Mod(congruence, m)
 		if congruence.Cmp(one) != 0 {
 			return errors.New("crypto/rsa: invalid exponents")
 		}
