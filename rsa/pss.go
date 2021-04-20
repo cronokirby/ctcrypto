@@ -299,6 +299,6 @@ func VerifyPSS(pub *PublicKey, hash crypto.Hash, digest []byte, sig []byte, opts
 	if m.TrueLen() > emLen*8 {
 		return ErrVerification
 	}
-	em := m.FillBytes(make([]byte, emLen))
-	return emsaPSSVerify(digest, em, int(emBits), opts.saltLength(), hash.New())
+	em := m.Bytes()
+	return emsaPSSVerify(digest, em[:emLen], int(emBits), opts.saltLength(), hash.New())
 }

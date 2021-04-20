@@ -144,8 +144,7 @@ func fromBase10(base10 string) *safenum.Nat {
 
 func fromBase10Mod(base10 string) *safenum.Modulus {
 	nat := fromBase10(base10)
-	modulus := safenum.ModulusFromNat(*nat)
-	return &modulus
+	return safenum.ModulusFromNat(*nat)
 }
 
 var test2048Key *PrivateKey
@@ -231,7 +230,7 @@ func TestEncryptOAEP(t *testing.T) {
 	for i, test := range testEncryptOAEPData {
 		n.SetString(test.modulus, 16)
 		nMod := safenum.ModulusFromBytes(n.Bytes())
-		public := PublicKey{&nMod, test.e}
+		public := PublicKey{nMod, test.e}
 
 		for j, message := range test.msgs {
 			randomSource := bytes.NewReader(message.seed)
@@ -255,7 +254,7 @@ func TestDecryptOAEP(t *testing.T) {
 		d.SetString(test.d, 16)
 		private := new(PrivateKey)
 		nMod := safenum.ModulusFromBytes(n.Bytes())
-		private.PublicKey = PublicKey{&nMod, test.e}
+		private.PublicKey = PublicKey{nMod, test.e}
 		private.D = new(safenum.Nat).SetBytes(d.Bytes())
 
 		for j, message := range test.msgs {

@@ -240,8 +240,7 @@ func modFromHex(hex string) *safenum.Modulus {
 	if !ok {
 		panic("bad hex: " + hex)
 	}
-	m := safenum.ModulusFromBytes(n.Bytes())
-	return &m
+	return safenum.ModulusFromBytes(n.Bytes())
 }
 
 func intFromHex(hex string) int {

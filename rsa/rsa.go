@@ -230,7 +230,7 @@ func (priv *PrivateKey) Validate() error {
 	for _, prime := range priv.Primes {
 		pminus1 := new(safenum.Nat).Sub(prime, one, prime.AnnouncedLen())
 		m := safenum.ModulusFromNat(*pminus1)
-		congruence.ModMul(priv.D, e, &m)
+		congruence.ModMul(priv.D, e, m)
 		if congruence.Cmp(one) != 0 {
 			return errors.New("crypto/rsa: invalid exponents")
 		}
@@ -343,8 +343,7 @@ NextSetOfPrimes:
 				natPrimes[i] = new(safenum.Nat).SetBytes(primes[i].Bytes())
 			}
 			priv.Primes = natPrimes
-			nMod := safenum.ModulusFromBytes(n.Bytes())
-			priv.N = &nMod
+			priv.N = safenum.ModulusFromBytes(n.Bytes())
 			break
 		}
 	}
@@ -472,14 +471,14 @@ func (priv *PrivateKey) Precompute() {
 
 	priv.Precomputed.Dp = new(safenum.Nat).Sub(priv.Primes[0], one, priv.Primes[0].AnnouncedLen())
 	dpMod := safenum.ModulusFromNat(*priv.Precomputed.Dp)
-	priv.Precomputed.Dp.Mod(priv.D, &dpMod)
+	priv.Precomputed.Dp.Mod(priv.D, dpMod)
 
 	priv.Precomputed.Dq = new(safenum.Nat).Sub(priv.Primes[1], one, priv.Primes[1].AnnouncedLen())
 	dqMod := safenum.ModulusFromNat(*priv.Precomputed.Dq)
-	priv.Precomputed.Dq.Mod(priv.D, &dqMod)
+	priv.Precomputed.Dq.Mod(priv.D, dqMod)
 
 	privMod0 := safenum.ModulusFromNat(*priv.Primes[0])
-	priv.Precomputed.Qinv = new(safenum.Nat).ModInverse(priv.Primes[1], &privMod0)
+	priv.Precomputed.Qinv = new(safenum.Nat).ModInverse(priv.Primes[1], privMod0)
 
 	rCap := priv.Primes[0].AnnouncedLen() + priv.Primes[1].AnnouncedLen()
 	r := new(safenum.Nat).Mul(priv.Primes[0], priv.Primes[1], rCap)
@@ -490,12 +489,12 @@ func (priv *PrivateKey) Precompute() {
 
 		values.Exp = new(safenum.Nat).Sub(prime, one, prime.AnnouncedLen())
 		expMod := safenum.ModulusFromNat(*values.Exp)
-		values.Exp.Mod(priv.D, &expMod)
+		values.Exp.Mod(priv.D, expMod)
 
 		// TODO: Add set method to avoid going through byte here
 		values.R = new(safenum.Nat).SetBytes(r.Bytes())
 		primeMod := safenum.ModulusFromNat(*prime)
-		values.Coeff = new(safenum.Nat).ModInverse(r, &primeMod)
+		values.Coeff = new(safenum.Nat).ModInverse(r, primeMod)
 
 		r.Mul(r, prime, r.AnnouncedLen()+prime.AnnouncedLen())
 	}
@@ -510,7 +509,7 @@ func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 	}
 	// TODO: Maybe add a way to compari moduli to zero?
 	zero := safenum.ModulusFromUint64(0)
-	if priv.N.Cmp(&zero) == 0 {
+	if priv.N.Cmp(zero) == 0 {
 		return nil, ErrDecryption
 	}
 
@@ -520,10 +519,10 @@ func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 		// We have the precalculated values needed for the CRT.
 		primeMod0 := safenum.ModulusFromNat(*priv.Primes[0])
 		primeMod1 := safenum.ModulusFromNat(*priv.Primes[1])
-		m = new(safenum.Nat).Exp(c, priv.Precomputed.Dp, &primeMod0)
-		m2 := new(safenum.Nat).Exp(c, priv.Precomputed.Dq, &primeMod1)
-		m.ModSub(m, m2, &primeMod0)
-		m.ModMul(m, priv.Precomputed.Qinv, &primeMod0)
+		m = new(safenum.Nat).Exp(c, priv.Precomputed.Dp, primeMod0)
+		m2 := new(safenum.Nat).Exp(c, priv.Precomputed.Dq, primeMod1)
+		m.ModSub(m, m2, primeMod0)
+		m.ModMul(m, priv.Precomputed.Qinv, primeMod0)
 		// TODO: Calculate the exact length necessary for m
 		m.Mul(m, priv.Primes[1], priv.N.BitLen())
 		m.Add(m, m2, priv.N.BitLen())
@@ -531,9 +530,9 @@ func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 		for i, values := range priv.Precomputed.CRTValues {
 			prime := priv.Primes[2+i]
 			primeMod := safenum.ModulusFromNat(*prime)
-			m2.Exp(c, values.Exp, &primeMod)
-			m2.ModSub(m2, m, &primeMod)
-			m2.ModMul(m2, values.Coeff, &primeMod)
+			m2.Exp(c, values.Exp, primeMod)
+			m2.ModSub(m2, m, primeMod)
+			m2.ModMul(m2, values.Coeff, primeMod)
 			m2.Mul(m2, values.R, priv.N.BitLen())
 			m.Add(m, m2, priv.N.BitLen())
 		}
