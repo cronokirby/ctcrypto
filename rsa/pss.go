@@ -209,14 +209,14 @@ func emsaPSSVerify(mHash, em []byte, emBits, sLen int, hash hash.Hash) error {
 // Note that hashed must be the result of hashing the input message using the
 // given hash function. salt is a random sequence of bytes whose length will be
 // later used to verify the signature.
-func signPSSWithSalt(rand io.Reader, priv *PrivateKey, hash crypto.Hash, hashed, salt []byte) ([]byte, error) {
+func signPSSWithSalt(priv *PrivateKey, hash crypto.Hash, hashed, salt []byte) ([]byte, error) {
 	emBits := int(priv.N.BitLen()) - 1
 	em, err := emsaPSSEncode(hashed, emBits, salt, hash.New())
 	if err != nil {
 		return nil, err
 	}
 	m := new(safenum.Nat).SetBytes(em)
-	c, err := decryptAndCheck(rand, priv, m)
+	c, err := decryptAndCheck(priv, m)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func SignPSS(rand io.Reader, priv *PrivateKey, hash crypto.Hash, digest []byte, 
 	if _, err := io.ReadFull(rand, salt); err != nil {
 		return nil, err
 	}
-	return signPSSWithSalt(rand, priv, hash, digest, salt)
+	return signPSSWithSalt(priv, hash, digest, salt)
 }
 
 // VerifyPSS verifies a PSS signature.

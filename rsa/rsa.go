@@ -147,7 +147,7 @@ func (priv *PrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOp
 		return SignPSS(rand, priv, pssOpts.Hash, digest, pssOpts)
 	}
 
-	return SignPKCS1v15(rand, priv, opts.HashFunc(), digest)
+	return SignPKCS1v15(priv, opts.HashFunc(), digest)
 }
 
 // Decrypt decrypts ciphertext with priv. If opts is nil or of type
@@ -155,12 +155,12 @@ func (priv *PrivateKey) Sign(rand io.Reader, digest []byte, opts crypto.SignerOp
 // opts must have type *OAEPOptions and OAEP decryption is done.
 func (priv *PrivateKey) Decrypt(rand io.Reader, ciphertext []byte, opts crypto.DecrypterOpts) (plaintext []byte, err error) {
 	if opts == nil {
-		return DecryptPKCS1v15(rand, priv, ciphertext)
+		return DecryptPKCS1v15(priv, ciphertext)
 	}
 
 	switch opts := opts.(type) {
 	case *OAEPOptions:
-		return DecryptOAEP(opts.Hash.New(), rand, priv, ciphertext, opts.Label)
+		return DecryptOAEP(opts.Hash.New(), priv, ciphertext, opts.Label)
 
 	case *PKCS1v15DecryptOptions:
 		if l := opts.SessionKeyLen; l > 0 {
@@ -168,12 +168,12 @@ func (priv *PrivateKey) Decrypt(rand io.Reader, ciphertext []byte, opts crypto.D
 			if _, err := io.ReadFull(rand, plaintext); err != nil {
 				return nil, err
 			}
-			if err := DecryptPKCS1v15SessionKey(rand, priv, ciphertext, plaintext); err != nil {
+			if err := DecryptPKCS1v15SessionKey(priv, ciphertext, plaintext); err != nil {
 				return nil, err
 			}
 			return plaintext, nil
 		} else {
-			return DecryptPKCS1v15(rand, priv, ciphertext)
+			return DecryptPKCS1v15(priv, ciphertext)
 		}
 
 	default:
@@ -501,20 +501,14 @@ func (priv *PrivateKey) Precompute() {
 	}
 }
 
-// decrypt performs an RSA decryption, resulting in a plaintext integer. If a
-// random source is given, RSA blinding is used.
-func decrypt(random io.Reader, priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
-	// TODO(agl): can we get away with reusing blinds?
+// decrypt performs an RSA decryption, resulting in a plaintext integer.
+func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 	if c.CmpMod(priv.N) > 0 {
 		err = ErrDecryption
 		return
 	}
 	if priv.N.BitLen() == 0 {
 		return nil, ErrDecryption
-	}
-
-	if random != nil {
-		randutil.MaybeReadByte(random)
 	}
 
 	if priv.Precomputed.Dp == nil {
@@ -549,8 +543,8 @@ func decrypt(random io.Reader, priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat
 	return
 }
 
-func decryptAndCheck(random io.Reader, priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
-	m, err = decrypt(random, priv, c)
+func decryptAndCheck(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
+	m, err = decrypt(priv, c)
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +571,7 @@ func decryptAndCheck(random io.Reader, priv *PrivateKey, c *safenum.Nat) (m *saf
 //
 // The label parameter must match the value given when encrypting. See
 // EncryptOAEP for details.
-func DecryptOAEP(hash hash.Hash, random io.Reader, priv *PrivateKey, ciphertext []byte, label []byte) ([]byte, error) {
+func DecryptOAEP(hash hash.Hash, priv *PrivateKey, ciphertext []byte, label []byte) ([]byte, error) {
 	if err := checkPub(&priv.PublicKey); err != nil {
 		return nil, err
 	}
@@ -589,7 +583,7 @@ func DecryptOAEP(hash hash.Hash, random io.Reader, priv *PrivateKey, ciphertext 
 
 	c := new(safenum.Nat).SetBytes(ciphertext)
 
-	m, err := decrypt(random, priv, c)
+	m, err := decrypt(priv, c)
 	if err != nil {
 		return nil, err
 	}
@@ -598,8 +592,6 @@ func DecryptOAEP(hash hash.Hash, random io.Reader, priv *PrivateKey, ciphertext 
 	lHash := hash.Sum(nil)
 	hash.Reset()
 
-	// We probably leak the number of leading zeros.
-	// It's not clear that we can do anything about this.
 	em := m.FillBytes(make([]byte, k))
 
 	firstByteIsZero := subtle.ConstantTimeByteEq(em[0], 0)

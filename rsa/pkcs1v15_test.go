@@ -12,7 +12,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"io"
 	"testing"
 	"testing/quick"
 
@@ -55,7 +54,7 @@ var decryptPKCS1v15Tests = []DecryptPKCS1v15Test{
 func TestDecryptPKCS1v15(t *testing.T) {
 	decryptionFuncs := []func([]byte) ([]byte, error){
 		func(ciphertext []byte) (plaintext []byte, err error) {
-			return DecryptPKCS1v15(nil, rsaPrivateKey, ciphertext)
+			return DecryptPKCS1v15(rsaPrivateKey, ciphertext)
 		},
 		func(ciphertext []byte) (plaintext []byte, err error) {
 			return rsaPrivateKey.Decrypt(nil, ciphertext, nil)
@@ -91,13 +90,7 @@ func TestEncryptPKCS1v15(t *testing.T) {
 			return false
 		}
 
-		var rand io.Reader
-		if !blind {
-			rand = nil
-		} else {
-			rand = random
-		}
-		plaintext, err := DecryptPKCS1v15(rand, rsaPrivateKey, ciphertext)
+		plaintext, err := DecryptPKCS1v15(rsaPrivateKey, ciphertext)
 		if err != nil {
 			t.Errorf("error decrypting: %s", err)
 			return false
@@ -140,7 +133,7 @@ var decryptPKCS1v15SessionKeyTests = []DecryptPKCS1v15Test{
 func TestEncryptPKCS1v15SessionKey(t *testing.T) {
 	for i, test := range decryptPKCS1v15SessionKeyTests {
 		key := []byte("FAIL")
-		err := DecryptPKCS1v15SessionKey(nil, rsaPrivateKey, decodeBase64(test.in), key)
+		err := DecryptPKCS1v15SessionKey(rsaPrivateKey, decodeBase64(test.in), key)
 		if err != nil {
 			t.Errorf("#%d error decrypting", i)
 		}
@@ -199,7 +192,7 @@ func TestSignPKCS1v15(t *testing.T) {
 		h.Write([]byte(test.in))
 		digest := h.Sum(nil)
 
-		s, err := SignPKCS1v15(nil, rsaPrivateKey, crypto.SHA1, digest)
+		s, err := SignPKCS1v15(rsaPrivateKey, crypto.SHA1, digest)
 		if err != nil {
 			t.Errorf("#%d %s", i, err)
 		}
@@ -228,7 +221,7 @@ func TestVerifyPKCS1v15(t *testing.T) {
 
 func TestOverlongMessagePKCS1v15(t *testing.T) {
 	ciphertext := decodeBase64("fjOVdirUzFoLlukv80dBllMLjXythIf22feqPrNo0YoIjzyzyoMFiLjAc/Y4krkeZ11XFThIrEvw\nkRiZcCq5ng==")
-	_, err := DecryptPKCS1v15(nil, rsaPrivateKey, ciphertext)
+	_, err := DecryptPKCS1v15(rsaPrivateKey, ciphertext)
 	if err == nil {
 		t.Error("RSA decrypted a message that was too long.")
 	}
@@ -244,7 +237,7 @@ func TestUnpaddedSignature(t *testing.T) {
 	// file.
 	expectedSig := decodeBase64("pX4DR8azytjdQ1rtUiC040FjkepuQut5q2ZFX1pTjBrOVKNjgsCDyiJDGZTCNoh9qpXYbhl7iEym30BWWwuiZg==")
 
-	sig, err := SignPKCS1v15(nil, rsaPrivateKey, crypto.Hash(0), msg)
+	sig, err := SignPKCS1v15(rsaPrivateKey, crypto.Hash(0), msg)
 	if err != nil {
 		t.Fatalf("SignPKCS1v15 failed: %s", err)
 	}
@@ -265,7 +258,7 @@ func TestShortSessionKey(t *testing.T) {
 	}
 
 	var key [32]byte
-	if err := DecryptPKCS1v15SessionKey(nil, rsaPrivateKey, ciphertext, key[:]); err != nil {
+	if err := DecryptPKCS1v15SessionKey(rsaPrivateKey, ciphertext, key[:]); err != nil {
 		t.Fatalf("Failed to decrypt short message: %s", err)
 	}
 

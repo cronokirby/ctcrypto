@@ -116,7 +116,7 @@ func testKeyBasics(t *testing.T, priv *PrivateKey) {
 	m := new(safenum.Nat).SetUint64(42)
 	c := new(safenum.Nat).SetBytes(encrypt(new(safenum.Nat), pub, m).Bytes())
 
-	m2, err := decrypt(nil, priv, c)
+	m2, err := decrypt(priv, c)
 	if err != nil {
 		t.Errorf("error while decrypting: %s", err)
 		return
@@ -125,7 +125,7 @@ func testKeyBasics(t *testing.T, priv *PrivateKey) {
 		t.Errorf("got:%v, want:%v (%+v)", m2, m, priv)
 	}
 
-	m3, err := decrypt(rand.Reader, priv, c)
+	m3, err := decrypt(priv, c)
 	if err != nil {
 		t.Errorf("error while decrypting (blind): %s", err)
 	}
@@ -171,7 +171,7 @@ func BenchmarkRSA2048Decrypt(b *testing.B) {
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		decrypt(nil, test2048Key, c)
+		decrypt(test2048Key, c)
 	}
 }
 
@@ -181,7 +181,7 @@ func BenchmarkRSA2048Sign(b *testing.B) {
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		SignPKCS1v15(rand.Reader, test2048Key, crypto.SHA256, hashed[:])
+		SignPKCS1v15(test2048Key, crypto.SHA256, hashed[:])
 	}
 }
 
@@ -206,7 +206,7 @@ func Benchmark3PrimeRSA2048Decrypt(b *testing.B) {
 	b.StartTimer()
 
 	for i := 0; i < b.N; i++ {
-		decrypt(nil, priv, c)
+		decrypt(priv, c)
 	}
 }
 
@@ -244,8 +244,6 @@ func TestEncryptOAEP(t *testing.T) {
 }
 
 func TestDecryptOAEP(t *testing.T) {
-	random := rand.Reader
-
 	sha1 := sha1.New()
 	n := new(big.Int)
 	d := new(big.Int)
@@ -257,7 +255,7 @@ func TestDecryptOAEP(t *testing.T) {
 		private.D = new(safenum.Nat).SetBytes(d.Bytes())
 
 		for j, message := range test.msgs {
-			out, err := DecryptOAEP(sha1, nil, private, message.out, nil)
+			out, err := DecryptOAEP(sha1, private, message.out, nil)
 			if err != nil {
 				t.Errorf("#%d,%d error: %s", i, j, err)
 			} else if !bytes.Equal(out, message.in) {
@@ -265,7 +263,7 @@ func TestDecryptOAEP(t *testing.T) {
 			}
 
 			// Decrypt with blinding.
-			out, err = DecryptOAEP(sha1, random, private, message.out, nil)
+			out, err = DecryptOAEP(sha1, private, message.out, nil)
 			if err != nil {
 				t.Errorf("#%d,%d (blind) error: %s", i, j, err)
 			} else if !bytes.Equal(out, message.in) {
