@@ -182,8 +182,8 @@ func (priv *PrivateKey) Decrypt(rand io.Reader, ciphertext []byte, opts crypto.D
 }
 
 type PrecomputedValues struct {
-	Dp, Dq *big.Int // D mod (P-1) (or mod Q-1)
-	Qinv   *big.Int // Q^-1 mod P
+	Dp, Dq *safenum.Nat // D mod (P-1) (or mod Q-1)
+	Qinv   *safenum.Nat // Q^-1 mod P
 
 	// CRTValues is used for the 3rd and subsequent primes. Due to a
 	// historical accident, the CRT for the first two primes is handled
@@ -474,13 +474,15 @@ func (priv *PrivateKey) Precompute() {
 	}
 	privDBig := new(big.Int).SetBytes(priv.D.Bytes())
 
-	priv.Precomputed.Dp = new(big.Int).Sub(primesBig[0], bigOne)
-	priv.Precomputed.Dp.Mod(privDBig, priv.Precomputed.Dp)
+	privPrecomputedDpBig := new(big.Int).Sub(primesBig[0], bigOne)
+	privPrecomputedDpBig.Mod(privDBig, privPrecomputedDpBig)
+	priv.Precomputed.Dp = new(safenum.Nat).SetBytes(privPrecomputedDpBig.Bytes())
 
-	priv.Precomputed.Dq = new(big.Int).Sub(primesBig[1], bigOne)
-	priv.Precomputed.Dq.Mod(privDBig, priv.Precomputed.Dq)
+	privPrecomputedDqBig := new(big.Int).Sub(primesBig[1], bigOne)
+	privPrecomputedDqBig.Mod(privDBig, privPrecomputedDqBig)
+	priv.Precomputed.Dq = new(safenum.Nat).SetBytes(privPrecomputedDqBig.Bytes())
 
-	priv.Precomputed.Qinv = new(big.Int).ModInverse(primesBig[1], primesBig[0])
+	priv.Precomputed.Qinv = new(safenum.Nat).SetBytes(new(big.Int).ModInverse(primesBig[1], primesBig[0]).Bytes())
 
 	r := new(big.Int).Mul(primesBig[0], primesBig[1])
 	priv.Precomputed.CRTValues = make([]CRTValue, len(priv.Primes)-2)
@@ -552,13 +554,13 @@ func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err er
 			primesBig[i] = new(big.Int).SetBytes(priv.Primes[i].Bytes())
 		}
 		// We have the precalculated values needed for the CRT.
-		m = new(big.Int).Exp(c, priv.Precomputed.Dp, primesBig[0])
-		m2 := new(big.Int).Exp(c, priv.Precomputed.Dq, primesBig[1])
+		m = new(big.Int).Exp(c, new(big.Int).SetBytes(priv.Precomputed.Dp.Bytes()), primesBig[0])
+		m2 := new(big.Int).Exp(c, new(big.Int).SetBytes(priv.Precomputed.Dq.Bytes()), primesBig[1])
 		m.Sub(m, m2)
 		if m.Sign() < 0 {
 			m.Add(m, primesBig[0])
 		}
-		m.Mul(m, priv.Precomputed.Qinv)
+		m.Mul(m, new(big.Int).SetBytes(priv.Precomputed.Qinv.Bytes()))
 		m.Mod(m, primesBig[0])
 		m.Mul(m, primesBig[1])
 		m.Add(m, m2)
