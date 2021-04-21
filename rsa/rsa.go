@@ -33,6 +33,7 @@ import (
 	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
+	"github.com/cronokirby/safenum"
 )
 
 var bigZero = big.NewInt(0)
@@ -40,8 +41,8 @@ var bigOne = big.NewInt(1)
 
 // A PublicKey represents the public part of an RSA key.
 type PublicKey struct {
-	N *big.Int // modulus
-	E int      // public exponent
+	N *safenum.Modulus // modulus
+	E int              // public exponent
 }
 
 // Any methods implemented on PublicKey might need to also be implemented on
@@ -50,7 +51,7 @@ type PublicKey struct {
 // Size returns the modulus size in bytes. Raw signatures and ciphertexts
 // for or by this public key will have the same size.
 func (pub *PublicKey) Size() int {
-	return (pub.N.BitLen() + 7) / 8
+	return int((pub.N.BitLen() + 7) / 8)
 }
 
 // Equal reports whether pub and x have the same value.
@@ -98,9 +99,9 @@ func checkPub(pub *PublicKey) error {
 
 // A PrivateKey represents an RSA key
 type PrivateKey struct {
-	PublicKey            // public part.
-	D         *big.Int   // private exponent
-	Primes    []*big.Int // prime factors of N, has >= 2 elements.
+	PublicKey                // public part.
+	D         *safenum.Nat   // private exponent
+	Primes    []*safenum.Nat // prime factors of N, has >= 2 elements.
 
 	// Precomputed contains precomputed values that speed up private
 	// operations, if available.
@@ -208,13 +209,15 @@ func (priv *PrivateKey) Validate() error {
 	// Check that Πprimes == n.
 	modulus := new(big.Int).Set(bigOne)
 	for _, prime := range priv.Primes {
+		bigPrime := new(big.Int).SetBytes(prime.Bytes())
 		// Any primes ≤ 1 will cause divide-by-zero panics later.
-		if prime.Cmp(bigOne) <= 0 {
+		if bigPrime.Cmp(bigOne) <= 0 {
 			return errors.New("crypto/rsa: invalid prime value")
 		}
-		modulus.Mul(modulus, prime)
+		modulus.Mul(modulus, bigPrime)
 	}
-	if modulus.Cmp(priv.N) != 0 {
+	privNBig := new(big.Int).SetBytes(priv.N.Bytes())
+	if modulus.Cmp(privNBig) != 0 {
 		return errors.New("crypto/rsa: invalid modulus")
 	}
 
@@ -224,10 +227,12 @@ func (priv *PrivateKey) Validate() error {
 	// exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
 	// mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
 	congruence := new(big.Int)
+	privDBig := new(big.Int).SetBytes(priv.D.Bytes())
 	de := new(big.Int).SetInt64(int64(priv.E))
-	de.Mul(de, priv.D)
+	de.Mul(de, privDBig)
 	for _, prime := range priv.Primes {
-		pminus1 := new(big.Int).Sub(prime, bigOne)
+		primeBig := new(big.Int).SetBytes(prime.Bytes())
+		pminus1 := new(big.Int).Sub(primeBig, bigOne)
 		congruence.Mod(de, pminus1)
 		if congruence.Cmp(bigOne) != 0 {
 			return errors.New("crypto/rsa: invalid exponents")
@@ -330,13 +335,17 @@ NextSetOfPrimes:
 			continue NextSetOfPrimes
 		}
 
-		priv.D = new(big.Int)
+		privDBig := new(big.Int)
 		e := big.NewInt(int64(priv.E))
-		ok := priv.D.ModInverse(e, totient)
+		ok := privDBig.ModInverse(e, totient)
 
 		if ok != nil {
-			priv.Primes = primes
-			priv.N = n
+			priv.D = new(safenum.Nat).SetBytes(privDBig.Bytes())
+			priv.Primes = make([]*safenum.Nat, len(primes))
+			for i := 0; i < len(primes); i++ {
+				priv.Primes[i] = new(safenum.Nat).SetBytes(primes[i].Bytes())
+			}
+			priv.N = safenum.ModulusFromBytes(n.Bytes())
 			break
 		}
 	}
@@ -386,7 +395,7 @@ var ErrMessageTooLong = errors.New("crypto/rsa: message too long for RSA public 
 
 func encrypt(c *big.Int, pub *PublicKey, m *big.Int) *big.Int {
 	e := big.NewInt(int64(pub.E))
-	c.Exp(m, e, pub.N)
+	c.Exp(m, e, new(big.Int).SetBytes(pub.N.Bytes()))
 	return c
 }
 
@@ -459,23 +468,28 @@ func (priv *PrivateKey) Precompute() {
 	if priv.Precomputed.Dp != nil {
 		return
 	}
+	primesBig := make([]*big.Int, len(priv.Primes))
+	for i := 0; i < len(priv.Primes); i++ {
+		primesBig[i] = new(big.Int).SetBytes(priv.Primes[i].Bytes())
+	}
+	privDBig := new(big.Int).SetBytes(priv.D.Bytes())
 
-	priv.Precomputed.Dp = new(big.Int).Sub(priv.Primes[0], bigOne)
-	priv.Precomputed.Dp.Mod(priv.D, priv.Precomputed.Dp)
+	priv.Precomputed.Dp = new(big.Int).Sub(primesBig[0], bigOne)
+	priv.Precomputed.Dp.Mod(privDBig, priv.Precomputed.Dp)
 
-	priv.Precomputed.Dq = new(big.Int).Sub(priv.Primes[1], bigOne)
-	priv.Precomputed.Dq.Mod(priv.D, priv.Precomputed.Dq)
+	priv.Precomputed.Dq = new(big.Int).Sub(primesBig[1], bigOne)
+	priv.Precomputed.Dq.Mod(privDBig, priv.Precomputed.Dq)
 
-	priv.Precomputed.Qinv = new(big.Int).ModInverse(priv.Primes[1], priv.Primes[0])
+	priv.Precomputed.Qinv = new(big.Int).ModInverse(primesBig[1], primesBig[0])
 
-	r := new(big.Int).Mul(priv.Primes[0], priv.Primes[1])
+	r := new(big.Int).Mul(primesBig[0], primesBig[1])
 	priv.Precomputed.CRTValues = make([]CRTValue, len(priv.Primes)-2)
-	for i := 2; i < len(priv.Primes); i++ {
-		prime := priv.Primes[i]
+	for i := 2; i < len(primesBig); i++ {
+		prime := primesBig[i]
 		values := &priv.Precomputed.CRTValues[i-2]
 
 		values.Exp = new(big.Int).Sub(prime, bigOne)
-		values.Exp.Mod(priv.D, values.Exp)
+		values.Exp.Mod(privDBig, values.Exp)
 
 		values.R = new(big.Int).Set(r)
 		values.Coeff = new(big.Int).ModInverse(r, prime)
@@ -488,11 +502,12 @@ func (priv *PrivateKey) Precompute() {
 // random source is given, RSA blinding is used.
 func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err error) {
 	// TODO(agl): can we get away with reusing blinds?
-	if c.Cmp(priv.N) > 0 {
+	privNBig := new(big.Int).SetBytes(priv.N.Bytes())
+	if c.Cmp(privNBig) > 0 {
 		err = ErrDecryption
 		return
 	}
-	if priv.N.Sign() == 0 {
+	if privNBig.Sign() == 0 {
 		return nil, ErrDecryption
 	}
 
@@ -508,43 +523,48 @@ func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err er
 		var r *big.Int
 		ir = new(big.Int)
 		for {
-			r, err = rand.Int(random, priv.N)
+			r, err = rand.Int(random, privNBig)
 			if err != nil {
 				return
 			}
 			if r.Cmp(bigZero) == 0 {
 				r = bigOne
 			}
-			ok := ir.ModInverse(r, priv.N)
+			ok := ir.ModInverse(r, privNBig)
 			if ok != nil {
 				break
 			}
 		}
 		bigE := big.NewInt(int64(priv.E))
-		rpowe := new(big.Int).Exp(r, bigE, priv.N) // N != 0
+		rpowe := new(big.Int).Exp(r, bigE, privNBig) // N != 0
 		cCopy := new(big.Int).Set(c)
 		cCopy.Mul(cCopy, rpowe)
-		cCopy.Mod(cCopy, priv.N)
+		cCopy.Mod(cCopy, privNBig)
 		c = cCopy
 	}
 
 	if priv.Precomputed.Dp == nil {
-		m = new(big.Int).Exp(c, priv.D, priv.N)
+		privDBig := new(big.Int).SetBytes(priv.D.Bytes())
+		m = new(big.Int).Exp(c, privDBig, privNBig)
 	} else {
+		primesBig := make([]*big.Int, len(priv.Primes))
+		for i := 0; i < len(priv.Primes); i++ {
+			primesBig[i] = new(big.Int).SetBytes(priv.Primes[i].Bytes())
+		}
 		// We have the precalculated values needed for the CRT.
-		m = new(big.Int).Exp(c, priv.Precomputed.Dp, priv.Primes[0])
-		m2 := new(big.Int).Exp(c, priv.Precomputed.Dq, priv.Primes[1])
+		m = new(big.Int).Exp(c, priv.Precomputed.Dp, primesBig[0])
+		m2 := new(big.Int).Exp(c, priv.Precomputed.Dq, primesBig[1])
 		m.Sub(m, m2)
 		if m.Sign() < 0 {
-			m.Add(m, priv.Primes[0])
+			m.Add(m, primesBig[0])
 		}
 		m.Mul(m, priv.Precomputed.Qinv)
-		m.Mod(m, priv.Primes[0])
-		m.Mul(m, priv.Primes[1])
+		m.Mod(m, primesBig[0])
+		m.Mul(m, primesBig[1])
 		m.Add(m, m2)
 
 		for i, values := range priv.Precomputed.CRTValues {
-			prime := priv.Primes[2+i]
+			prime := primesBig[2+i]
 			m2.Exp(c, values.Exp, prime)
 			m2.Sub(m2, m)
 			m2.Mul(m2, values.Coeff)
@@ -560,7 +580,7 @@ func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err er
 	if ir != nil {
 		// Unblind.
 		m.Mul(m, ir)
-		m.Mod(m, priv.N)
+		m.Mod(m, privNBig)
 	}
 
 	return
