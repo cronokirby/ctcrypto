@@ -465,36 +465,29 @@ func (priv *PrivateKey) Precompute() {
 	if priv.Precomputed.Dp != nil {
 		return
 	}
-	primesBig := make([]*big.Int, len(priv.Primes))
-	for i := 0; i < len(priv.Primes); i++ {
-		primesBig[i] = new(big.Int).SetBytes(priv.Primes[i].Bytes())
-	}
-	privDBig := new(big.Int).SetBytes(priv.D.Bytes())
+	one := new(safenum.Nat).SetUint64(1)
 
-	privPrecomputedDpBig := new(big.Int).Sub(primesBig[0], bigOne)
-	privPrecomputedDpBig.Mod(privDBig, privPrecomputedDpBig)
-	priv.Precomputed.Dp = new(safenum.Nat).SetBytes(privPrecomputedDpBig.Bytes())
+	priv.Precomputed.Dp = new(safenum.Nat).Sub(priv.Primes[0], one, priv.Primes[0].AnnouncedLen())
+	priv.Precomputed.Dp.Mod(priv.D, safenum.ModulusFromNat(*priv.Precomputed.Dp))
 
-	privPrecomputedDqBig := new(big.Int).Sub(primesBig[1], bigOne)
-	privPrecomputedDqBig.Mod(privDBig, privPrecomputedDqBig)
-	priv.Precomputed.Dq = new(safenum.Nat).SetBytes(privPrecomputedDqBig.Bytes())
+	priv.Precomputed.Dq = new(safenum.Nat).Sub(priv.Primes[1], one, priv.Primes[1].AnnouncedLen())
+	priv.Precomputed.Dq.Mod(priv.D, safenum.ModulusFromNat(*priv.Precomputed.Dq))
 
-	priv.Precomputed.Qinv = new(safenum.Nat).SetBytes(new(big.Int).ModInverse(primesBig[1], primesBig[0]).Bytes())
+	priv.Precomputed.Qinv = new(safenum.Nat).ModInverse(priv.Primes[1], safenum.ModulusFromNat(*priv.Primes[0]))
 
-	r := new(big.Int).Mul(primesBig[0], primesBig[1])
+	r := new(safenum.Nat).Mul(priv.Primes[0], priv.Primes[1], priv.N.BitLen())
 	priv.Precomputed.CRTValues = make([]CRTValue, len(priv.Primes)-2)
-	for i := 2; i < len(primesBig); i++ {
-		prime := primesBig[i]
+	for i := 2; i < len(priv.Primes); i++ {
+		prime := priv.Primes[i]
 		values := &priv.Precomputed.CRTValues[i-2]
 
-		valuesExpBig := new(big.Int).Sub(prime, bigOne)
-		valuesExpBig.Mod(privDBig, valuesExpBig)
-		values.Exp = new(safenum.Nat).SetBytes(valuesExpBig.Bytes())
+		values.Exp = new(safenum.Nat).Sub(prime, one, prime.AnnouncedLen())
+		values.Exp.Mod(priv.D, safenum.ModulusFromNat(*values.Exp))
 
-		values.R = new(safenum.Nat).SetBytes(r.Bytes())
-		values.Coeff = new(safenum.Nat).SetBytes(new(big.Int).ModInverse(r, prime).Bytes())
+		values.R = new(safenum.Nat).SetNat(r)
+		values.Coeff = new(safenum.Nat).ModInverse(r, safenum.ModulusFromNat(*prime))
 
-		r.Mul(r, prime)
+		r.Mul(r, prime, priv.N.BitLen())
 	}
 }
 
