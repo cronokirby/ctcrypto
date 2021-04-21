@@ -12,7 +12,6 @@ import (
 	"errors"
 	"hash"
 	"io"
-	"math/big"
 
 	"github.com/cronokirby/safenum"
 )
@@ -294,12 +293,10 @@ func VerifyPSS(pub *PublicKey, hash crypto.Hash, digest []byte, sig []byte, opts
 		return ErrVerification
 	}
 	s := new(safenum.Nat).SetBytes(sig)
-	m := new(big.Int).SetBytes(encrypt(new(safenum.Nat), pub, s).Bytes())
+	m := encrypt(new(safenum.Nat), pub, s)
 	emBits := int(pub.N.BitLen()) - 1
 	emLen := (emBits + 7) / 8
-	if m.BitLen() > emLen*8 {
-		return ErrVerification
-	}
-	em := m.FillBytes(make([]byte, emLen))
+	em := m.Bytes()
+	em = em[len(em)-emLen:]
 	return emsaPSSVerify(digest, em, emBits, opts.saltLength(), hash.New())
 }
