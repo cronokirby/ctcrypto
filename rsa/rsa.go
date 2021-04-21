@@ -514,10 +514,6 @@ func decrypt(priv *PrivateKey, c *safenum.Nat) (m *safenum.Nat, err error) {
 	if priv.Precomputed.Dp == nil {
 		m = new(safenum.Nat).Exp(c, priv.D, priv.N)
 	} else {
-		primesBig := make([]*big.Int, len(priv.Primes))
-		for i := 0; i < len(priv.Primes); i++ {
-			primesBig[i] = new(big.Int).SetBytes(priv.Primes[i].Bytes())
-		}
 		// We have the precalculated values needed for the CRT.
 		primeMod0 := safenum.ModulusFromNat(*priv.Primes[0])
 		primeMod1 := safenum.ModulusFromNat(*priv.Primes[1])
