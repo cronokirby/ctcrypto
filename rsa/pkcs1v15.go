@@ -9,7 +9,6 @@ import (
 	"crypto/subtle"
 	"errors"
 	"io"
-	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
 	"github.com/cronokirby/safenum"
@@ -144,7 +143,7 @@ func decryptPKCS1v15(rand io.Reader, priv *PrivateKey, ciphertext []byte) (valid
 		return
 	}
 
-	c := new(big.Int).SetBytes(ciphertext)
+	c := new(safenum.Nat).SetBytes(ciphertext)
 	m, err := decrypt(rand, priv, c)
 	if err != nil {
 		return
@@ -250,7 +249,7 @@ func SignPKCS1v15(rand io.Reader, priv *PrivateKey, hash crypto.Hash, hashed []b
 	copy(em[k-tLen:k-hashLen], prefix)
 	copy(em[k-hashLen:k], hashed)
 
-	m := new(big.Int).SetBytes(em)
+	m := new(safenum.Nat).SetBytes(em)
 	c, err := decryptAndCheck(rand, priv, m)
 	if err != nil {
 		return nil, err
