@@ -225,15 +225,13 @@ func (priv *PrivateKey) Validate() error {
 	// inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) =
 	// exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
 	// mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
-	congruence := new(big.Int)
-	privDBig := new(big.Int).SetBytes(priv.D.Bytes())
-	de := new(big.Int).SetInt64(int64(priv.E))
-	de.Mul(de, privDBig)
+	congruence := new(safenum.Nat)
+	de := new(safenum.Nat).SetUint64(uint64(priv.E))
+	de.Mul(de, priv.D, priv.D.AnnouncedLen()+64)
 	for _, prime := range priv.Primes {
-		primeBig := new(big.Int).SetBytes(prime.Bytes())
-		pminus1 := new(big.Int).Sub(primeBig, bigOne)
-		congruence.Mod(de, pminus1)
-		if congruence.Cmp(bigOne) != 0 {
+		pminus1 := new(safenum.Nat).Sub(prime, one, priv.N.BitLen())
+		congruence.Mod(de, safenum.ModulusFromNat(*pminus1))
+		if congruence.Cmp(one) != 0 {
 			return errors.New("crypto/rsa: invalid exponents")
 		}
 	}
