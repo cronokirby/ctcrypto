@@ -195,8 +195,8 @@ type PrecomputedValues struct {
 // CRTValue contains the precomputed Chinese remainder theorem values.
 type CRTValue struct {
 	Exp   *safenum.Nat // D mod (prime-1).
-	Coeff *big.Int     // R·Coeff ≡ 1 mod Prime.
-	R     *big.Int     // product of primes prior to this (inc p and q).
+	Coeff *safenum.Nat // R·Coeff ≡ 1 mod Prime.
+	R     *safenum.Nat // product of primes prior to this (inc p and q).
 }
 
 // Validate performs basic sanity checks on the key.
@@ -494,8 +494,8 @@ func (priv *PrivateKey) Precompute() {
 		valuesExpBig.Mod(privDBig, valuesExpBig)
 		values.Exp = new(safenum.Nat).SetBytes(valuesExpBig.Bytes())
 
-		values.R = new(big.Int).Set(r)
-		values.Coeff = new(big.Int).ModInverse(r, prime)
+		values.R = new(safenum.Nat).SetBytes(r.Bytes())
+		values.Coeff = new(safenum.Nat).SetBytes(new(big.Int).ModInverse(r, prime).Bytes())
 
 		r.Mul(r, prime)
 	}
@@ -570,12 +570,12 @@ func decrypt(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int, err er
 			prime := primesBig[2+i]
 			m2.Exp(c, new(big.Int).SetBytes(values.Exp.Bytes()), prime)
 			m2.Sub(m2, m)
-			m2.Mul(m2, values.Coeff)
+			m2.Mul(m2, new(big.Int).SetBytes(values.Coeff.Bytes()))
 			m2.Mod(m2, prime)
 			if m2.Sign() < 0 {
 				m2.Add(m2, prime)
 			}
-			m2.Mul(m2, values.R)
+			m2.Mul(m2, new(big.Int).SetBytes(values.R.Bytes()))
 			m.Add(m, m2)
 		}
 	}
