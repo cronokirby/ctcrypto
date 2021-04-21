@@ -185,7 +185,7 @@ func GenerateKey(priv *PrivateKey, rand io.Reader) error {
 
 	priv.X = x
 	yNat := new(safenum.Nat)
-	yNat.Exp(gNat, x, &pMod)
+	yNat.Exp(gNat, x, pMod)
 	priv.Y = new(big.Int)
 	priv.Y.SetBytes(yNat.Bytes())
 	return nil
@@ -234,16 +234,16 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 			//    ceil(log_2(Q)) mod 8 = 0
 			// Thus this loop will quickly terminate.
 			// This leaks the value of the check, but the check being true is statically clear
-			if !k.EqZero() && k.CmpMod(&qMod) < 0 {
+			if !k.EqZero() && k.CmpMod(qMod) < 0 {
 				break
 			}
 		}
 
 		// Note that this method is done without leakage, so we don't need to use exponentiation
-		kInv := new(safenum.Nat).ModInverse(k, &qMod)
+		kInv := new(safenum.Nat).ModInverse(k, qMod)
 
-		rNat := new(safenum.Nat).Exp(gNat, k, &pMod)
-		rNat.Mod(rNat, &qMod)
+		rNat := new(safenum.Nat).Exp(gNat, k, pMod)
+		rNat.Mod(rNat, qMod)
 		if rNat.EqZero() {
 			continue
 		}
@@ -251,9 +251,9 @@ func Sign(rand io.Reader, priv *PrivateKey, hash []byte) (r, s *big.Int, err err
 
 		z := k.SetBytes(hash)
 
-		sNat := new(safenum.Nat).ModMul(priv.X, rNat, &qMod)
-		sNat.ModAdd(sNat, z, &qMod)
-		sNat.ModMul(sNat, kInv, &qMod)
+		sNat := new(safenum.Nat).ModMul(priv.X, rNat, qMod)
+		sNat.ModAdd(sNat, z, qMod)
+		sNat.ModMul(sNat, kInv, qMod)
 		if !sNat.EqZero() {
 			s = new(big.Int).SetBytes(sNat.Bytes())
 			break
