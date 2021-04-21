@@ -11,6 +11,6 @@ func main() {
 	x.SetUint64(4)
 	m := safenum.ModulusFromBytes([]byte{13})
 	y.SetBytes([]byte{0xFF})
-	x.Exp(&x, &y, &m)
+	x.Exp(&x, &y, m)
 	fmt.Println(x)
 }

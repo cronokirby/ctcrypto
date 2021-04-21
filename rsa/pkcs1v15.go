@@ -12,6 +12,7 @@ import (
 	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
+	"github.com/cronokirby/safenum"
 )
 
 // This file implements encryption and decryption using PKCS #1 v1.5 padding.
@@ -58,8 +59,8 @@ func EncryptPKCS1v15(rand io.Reader, pub *PublicKey, msg []byte) ([]byte, error)
 	em[len(em)-len(msg)-1] = 0
 	copy(mm, msg)
 
-	m := new(big.Int).SetBytes(em)
-	c := encrypt(new(big.Int), pub, m)
+	m := new(safenum.Nat).SetBytes(em)
+	c := encrypt(new(safenum.Nat), pub, m)
 
 	return c.FillBytes(em), nil
 }
@@ -282,8 +283,8 @@ func VerifyPKCS1v15(pub *PublicKey, hash crypto.Hash, hashed []byte, sig []byte)
 		return ErrVerification
 	}
 
-	c := new(big.Int).SetBytes(sig)
-	m := encrypt(new(big.Int), pub, c)
+	c := new(safenum.Nat).SetBytes(sig)
+	m := encrypt(new(safenum.Nat), pub, c)
 	em := m.FillBytes(make([]byte, k))
 	// EM = 0x00 || 0x01 || PS || 0x00 || T
 

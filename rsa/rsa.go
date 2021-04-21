@@ -393,9 +393,9 @@ func mgf1XOR(out []byte, hash hash.Hash, seed []byte) {
 // too large for the size of the public key.
 var ErrMessageTooLong = errors.New("crypto/rsa: message too long for RSA public key size")
 
-func encrypt(c *big.Int, pub *PublicKey, m *big.Int) *big.Int {
-	e := big.NewInt(int64(pub.E))
-	c.Exp(m, e, new(big.Int).SetBytes(pub.N.Bytes()))
+func encrypt(c *safenum.Nat, pub *PublicKey, m *safenum.Nat) *safenum.Nat {
+	e := new(safenum.Nat).SetUint64(uint64(pub.E))
+	c.Exp(m, e, safenum.ModulusFromBytes(pub.N.Bytes()))
 	return c
 }
 
@@ -446,9 +446,9 @@ func EncryptOAEP(hash hash.Hash, random io.Reader, pub *PublicKey, msg []byte, l
 	mgf1XOR(db, hash, seed)
 	mgf1XOR(seed, hash, db)
 
-	m := new(big.Int)
+	m := new(safenum.Nat)
 	m.SetBytes(em)
-	c := encrypt(new(big.Int), pub, m)
+	c := encrypt(new(safenum.Nat), pub, m)
 
 	out := make([]byte, k)
 	return c.FillBytes(out), nil
@@ -597,7 +597,8 @@ func decryptAndCheck(random io.Reader, priv *PrivateKey, c *big.Int) (m *big.Int
 
 	// In order to defend against errors in the CRT computation, m^e is
 	// calculated, which should match the original ciphertext.
-	check := encrypt(new(big.Int), &priv.PublicKey, m)
+	mNat := new(safenum.Nat).SetBytes(m.Bytes())
+	check := new(big.Int).SetBytes(encrypt(new(safenum.Nat), &priv.PublicKey, mNat).Bytes())
 	if c.Cmp(check) != 0 {
 		return nil, errors.New("rsa: internal error")
 	}

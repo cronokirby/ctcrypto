@@ -13,6 +13,8 @@ import (
 	"hash"
 	"io"
 	"math/big"
+
+	"github.com/cronokirby/safenum"
 )
 
 // Per RFC 8017, Section 9.1
@@ -291,8 +293,8 @@ func VerifyPSS(pub *PublicKey, hash crypto.Hash, digest []byte, sig []byte, opts
 	if len(sig) != pub.Size() {
 		return ErrVerification
 	}
-	s := new(big.Int).SetBytes(sig)
-	m := encrypt(new(big.Int), pub, s)
+	s := new(safenum.Nat).SetBytes(sig)
+	m := new(big.Int).SetBytes(encrypt(new(safenum.Nat), pub, s).Bytes())
 	emBits := int(pub.N.BitLen()) - 1
 	emLen := (emBits + 7) / 8
 	if m.BitLen() > emLen*8 {
