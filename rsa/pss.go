@@ -1,6 +1,6 @@
 // Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE_go file.
+// license that can be found in the LICENSE file.
 
 package rsa
 
@@ -12,8 +12,7 @@ import (
 	"errors"
 	"hash"
 	"io"
-
-	"github.com/cronokirby/safenum"
+	"math/big"
 )
 
 // Per RFC 8017, Section 9.1
@@ -210,12 +209,12 @@ func emsaPSSVerify(mHash, em []byte, emBits, sLen int, hash hash.Hash) error {
 // later used to verify the signature.
 func signPSSWithSalt(rand io.Reader, priv *PrivateKey, hash crypto.Hash, hashed, salt []byte) ([]byte, error) {
 	emBits := priv.N.BitLen() - 1
-	em, err := emsaPSSEncode(hashed, int(emBits), salt, hash.New())
+	em, err := emsaPSSEncode(hashed, emBits, salt, hash.New())
 	if err != nil {
 		return nil, err
 	}
-	m := new(safenum.Nat).SetBytes(em)
-	c, err := decryptAndCheck(priv, m)
+	m := new(big.Int).SetBytes(em)
+	c, err := decryptAndCheck(rand, priv, m)
 	if err != nil {
 		return nil, err
 	}
@@ -292,13 +291,13 @@ func VerifyPSS(pub *PublicKey, hash crypto.Hash, digest []byte, sig []byte, opts
 	if len(sig) != pub.Size() {
 		return ErrVerification
 	}
-	s := new(safenum.Nat).SetBytes(sig)
-	m := encrypt(new(safenum.Nat), pub, s)
+	s := new(big.Int).SetBytes(sig)
+	m := encrypt(new(big.Int), pub, s)
 	emBits := pub.N.BitLen() - 1
 	emLen := (emBits + 7) / 8
-	if m.TrueLen() > emLen*8 {
+	if m.BitLen() > emLen*8 {
 		return ErrVerification
 	}
-	em := m.Bytes()
-	return emsaPSSVerify(digest, em[:emLen], int(emBits), opts.saltLength(), hash.New())
+	em := m.FillBytes(make([]byte, emLen))
+	return emsaPSSVerify(digest, em, emBits, opts.saltLength(), hash.New())
 }

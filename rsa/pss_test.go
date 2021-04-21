@@ -1,6 +1,6 @@
 // Copyright 2013 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE_go file.
+// license that can be found in the LICENSE file.
 
 package rsa
 
@@ -19,8 +19,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/cronokirby/safenum"
 )
 
 func TestEMSAPSS(t *testing.T) {
@@ -143,7 +141,7 @@ func TestPSSGolden(t *testing.T) {
 			if !ok {
 				continue
 			}
-			key.N = modFromHex(nHex)
+			key.N = bigFromHex(nHex)
 			key.E = intFromHex(<-values)
 			// We don't care for d, p, q, dP, dQ or qInv.
 			for i := 0; i < 6; i++ {
@@ -235,12 +233,12 @@ func TestPSSSigning(t *testing.T) {
 	}
 }
 
-func modFromHex(hex string) *safenum.Modulus {
+func bigFromHex(hex string) *big.Int {
 	n, ok := new(big.Int).SetString(hex, 16)
 	if !ok {
 		panic("bad hex: " + hex)
 	}
-	return safenum.ModulusFromBytes(n.Bytes())
+	return n
 }
 
 func intFromHex(hex string) int {
