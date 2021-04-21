@@ -30,14 +30,10 @@ import (
 	"hash"
 	"io"
 	"math"
-	"math/big"
 
 	"github.com/cronokirby/ctcrypto/internal/randutil"
 	"github.com/cronokirby/safenum"
 )
-
-var bigZero = big.NewInt(0)
-var bigOne = big.NewInt(1)
 
 // A PublicKey represents the public part of an RSA key.
 type PublicKey struct {
@@ -280,7 +276,7 @@ func GenerateMultiPrimeKey(random io.Reader, nprimes int, bits int) (*PrivateKey
 		}
 	}
 
-	primes := make([]*big.Int, nprimes)
+	primes := make([]*safenum.Nat, nprimes)
 
 NextSetOfPrimes:
 	for {
@@ -300,12 +296,12 @@ NextSetOfPrimes:
 			todo += (nprimes - 2) / 5
 		}
 		for i := 0; i < nprimes; i++ {
-			var err error
-			primes[i], err = rand.Prime(random, todo/(nprimes-i))
+			primesIBig, err := rand.Prime(random, todo/(nprimes-i))
+			primes[i] = new(safenum.Nat).SetBytes(primesIBig.Bytes())
 			if err != nil {
 				return nil, err
 			}
-			todo -= primes[i].BitLen()
+			todo -= int(primes[i].TrueLen())
 		}
 
 		// Make sure that primes is pairwise unequal.
@@ -317,27 +313,28 @@ NextSetOfPrimes:
 			}
 		}
 
-		n := new(big.Int).Set(bigOne)
-		totient := new(big.Int).Set(bigOne)
-		pminus1 := new(big.Int)
+		one := new(safenum.Nat).SetUint64(1)
+		n := new(safenum.Nat).SetUint64(1)
+		totient := new(safenum.Nat).SetUint64(1)
+		pminus1 := new(safenum.Nat)
 		for _, prime := range primes {
-			n.Mul(n, prime)
-			pminus1.Sub(prime, bigOne)
-			totient.Mul(totient, pminus1)
+			n.Mul(n, prime, uint(bits))
+			pminus1.Sub(prime, one, prime.TrueLen())
+			totient.Mul(totient, pminus1, uint(bits))
 		}
-		if n.BitLen() != bits {
+		if int(n.TrueLen()) != bits {
 			// This should never happen for nprimes == 2 because
 			// crypto/rand should set the top two bits in each prime.
 			// For nprimes > 2 we hope it does not happen often.
 			continue NextSetOfPrimes
 		}
 
-		privDBig := new(big.Int)
-		e := big.NewInt(int64(priv.E))
-		ok := privDBig.ModInverse(e, totient)
+		e := new(safenum.Nat).SetUint64(uint64(priv.E))
+		// NOTE: In case priv.E is badly chosen, this can silently fail
+		priv.D = new(safenum.Nat)
+		ok := priv.D.ModInverseEven(e, totient)
 
 		if ok != nil {
-			priv.D = new(safenum.Nat).SetBytes(privDBig.Bytes())
 			priv.Primes = make([]*safenum.Nat, len(primes))
 			for i := 0; i < len(primes); i++ {
 				priv.Primes[i] = new(safenum.Nat).SetBytes(primes[i].Bytes())
