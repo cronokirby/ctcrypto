@@ -1,6 +1,6 @@
 // Copyright 2015 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE_go file.
+// license that can be found in the LICENSE file.
 
 // This file contains the Go wrapper for the constant-time, 64-bit assembly
 // implementation of P256. The optimizations performed here are described in
