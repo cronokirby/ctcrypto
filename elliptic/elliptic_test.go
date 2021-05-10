@@ -15,7 +15,7 @@ import (
 
 func TestOnCurve(t *testing.T) {
 	p224 := P224()
-	if !p224.IsOnCurve(p224.Params().Gx, p224.Params().Gy) {
+	if !p224.IsOnCurve(new(big.Int).SetBytes(p224.Params().Gx.Bytes()), new(big.Int).SetBytes(p224.Params().Gy.Bytes())) {
 		t.Errorf("FAIL")
 	}
 }
@@ -437,8 +437,8 @@ func testInfinity(t *testing.T, curve Curve) {
 		t.Errorf("2∞ != ∞")
 	}
 
-	baseX := curve.Params().Gx
-	baseY := curve.Params().Gy
+	baseX := new(big.Int).SetBytes(curve.Params().Gx.Bytes())
+	baseY := new(big.Int).SetBytes(curve.Params().Gy.Bytes())
 
 	x3, y3 := curve.Add(baseX, baseY, x, y)
 	if x3.Cmp(baseX) != 0 || y3.Cmp(baseY) != 0 {
@@ -498,8 +498,8 @@ func TestCombinedMult(t *testing.T) {
 		p256 = &synthCombinedMult{P256()}
 	}
 
-	gx := p256.Params().Gx
-	gy := p256.Params().Gy
+	gx := new(big.Int).SetBytes(p256.Params().Gx.Bytes())
+	gy := new(big.Int).SetBytes(p256.Params().Gy.Bytes())
 
 	zero := make([]byte, 32)
 	one := make([]byte, 32)
@@ -532,7 +532,7 @@ func TestCombinedMult(t *testing.T) {
 		t.Errorf("1×G + 1×G = (%d, %d), should be (%d, %d)", x, y, ggx, ggy)
 	}
 
-	minusOne := new(big.Int).Sub(p256.Params().N, big.NewInt(1))
+	minusOne := new(big.Int).Sub(new(big.Int).SetBytes(p256.Params().N.Bytes()), big.NewInt(1))
 	// 1×G + (-1)×G = ∞
 	x, y = p256.CombinedMult(gx, gy, one, minusOne.Bytes())
 	if x.Sign() != 0 || y.Sign() != 0 {
@@ -615,7 +615,7 @@ func TestP224Overflow(t *testing.T) {
 // See https://golang.org/issues/20482
 func TestUnmarshalToLargeCoordinates(t *testing.T) {
 	curve := P256()
-	p := curve.Params().P
+	p := new(big.Int).SetBytes(curve.Params().P.Bytes())
 
 	invalidX, invalidY := make([]byte, 65), make([]byte, 65)
 	invalidX[0], invalidY[0] = 4, 4 // uncompressed encoding

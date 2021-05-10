@@ -30,7 +30,7 @@ func p224AlternativeToBig(in *p224FieldElement) *big.Int {
 		tmp.SetInt64(int64(in[i]))
 		ret.Add(ret, tmp)
 	}
-	ret.Mod(ret, P224().Params().P)
+	ret.Mod(ret, new(big.Int).SetBytes(P224().Params().P.Bytes()))
 	return ret
 }
 
@@ -111,7 +111,7 @@ func TestP224Mul(t *testing.T) {
 		p224Mul(&out, &a, &b, &tmp)
 
 		exp := new(big.Int).Mul(p224AlternativeToBig(&a), p224AlternativeToBig(&b))
-		exp.Mod(exp, P224().Params().P)
+		exp.Mod(exp, new(big.Int).SetBytes(P224().Params().P.Bytes()))
 		got := p224AlternativeToBig(&out)
 		if exp.Cmp(got) != 0 || !isInBounds(&out) {
 			t.Logf("a = %x", a)
@@ -142,7 +142,7 @@ func TestP224Square(t *testing.T) {
 
 		exp := p224AlternativeToBig(&a)
 		exp.Mul(exp, exp)
-		exp.Mod(exp, P224().Params().P)
+		exp.Mod(exp, new(big.Int).SetBytes(P224().Params().P.Bytes()))
 		got := p224AlternativeToBig(&out)
 		if exp.Cmp(got) != 0 || !isInBounds(&out) {
 			t.Logf("a = %x", a)
@@ -164,7 +164,7 @@ func TestP224Add(t *testing.T) {
 		p224Add(&out, &a, &b)
 
 		exp := new(big.Int).Add(p224AlternativeToBig(&a), p224AlternativeToBig(&b))
-		exp.Mod(exp, P224().Params().P)
+		exp.Mod(exp, new(big.Int).SetBytes(P224().Params().P.Bytes()))
 		got := p224AlternativeToBig(&out)
 		if exp.Cmp(got) != 0 {
 			t.Logf("a = %x", a)

@@ -17,6 +17,8 @@ import (
 	"io"
 	"math/big"
 	"sync"
+
+	"github.com/cronokirby/safenum"
 )
 
 // A Curve represents a short-form Weierstrass curve with a=-3.
@@ -43,12 +45,12 @@ type Curve interface {
 // CurveParams contains the parameters of an elliptic curve and also provides
 // a generic, non-constant time implementation of Curve.
 type CurveParams struct {
-	P       *big.Int // the order of the underlying field
-	N       *big.Int // the order of the base point
-	B       *big.Int // the constant of the curve equation
-	Gx, Gy  *big.Int // (x,y) of the base point
-	BitSize int      // the size of the underlying field
-	Name    string   // the canonical name of the curve
+	P       *safenum.Modulus // the order of the underlying field
+	N       *safenum.Modulus // the order of the base point
+	B       *safenum.Nat     // the constant of the curve equation
+	Gx, Gy  *safenum.Nat     // (x,y) of the base point
+	BitSize int              // the size of the underlying field
+	Name    string           // the canonical name of the curve
 }
 
 func (curve *CurveParams) Params() *CurveParams {
@@ -64,8 +66,8 @@ func (curve *CurveParams) polynomial(x *big.Int) *big.Int {
 	threeX.Add(threeX, x)
 
 	x3.Sub(x3, threeX)
-	x3.Add(x3, curve.B)
-	x3.Mod(x3, curve.P)
+	x3.Add(x3, new(big.Int).SetBytes(curve.B.Bytes()))
+	x3.Mod(x3, new(big.Int).SetBytes(curve.P.Bytes()))
 
 	return x3
 }
@@ -73,7 +75,7 @@ func (curve *CurveParams) polynomial(x *big.Int) *big.Int {
 func (curve *CurveParams) IsOnCurve(x, y *big.Int) bool {
 	// y² = x³ - 3x + b
 	y2 := new(big.Int).Mul(y, y)
-	y2.Mod(y2, curve.P)
+	y2.Mod(y2, new(big.Int).SetBytes(curve.P.Bytes()))
 
 	return curve.polynomial(x).Cmp(y2) == 0
 }
@@ -96,14 +98,14 @@ func (curve *CurveParams) affineFromJacobian(x, y, z *big.Int) (xOut, yOut *big.
 		return new(big.Int), new(big.Int)
 	}
 
-	zinv := new(big.Int).ModInverse(z, curve.P)
+	zinv := new(big.Int).ModInverse(z, new(big.Int).SetBytes(curve.P.Bytes()))
 	zinvsq := new(big.Int).Mul(zinv, zinv)
 
 	xOut = new(big.Int).Mul(x, zinvsq)
-	xOut.Mod(xOut, curve.P)
+	xOut.Mod(xOut, new(big.Int).SetBytes(curve.P.Bytes()))
 	zinvsq.Mul(zinvsq, zinv)
 	yOut = new(big.Int).Mul(y, zinvsq)
-	yOut.Mod(yOut, curve.P)
+	yOut.Mod(yOut, new(big.Int).SetBytes(curve.P.Bytes()))
 	return
 }
 
@@ -131,19 +133,20 @@ func (curve *CurveParams) addJacobian(x1, y1, z1, x2, y2, z2 *big.Int) (*big.Int
 		return x3, y3, z3
 	}
 
+	pBig := new(big.Int).SetBytes(curve.P.Bytes())
 	z1z1 := new(big.Int).Mul(z1, z1)
-	z1z1.Mod(z1z1, curve.P)
+	z1z1.Mod(z1z1, pBig)
 	z2z2 := new(big.Int).Mul(z2, z2)
-	z2z2.Mod(z2z2, curve.P)
+	z2z2.Mod(z2z2, pBig)
 
 	u1 := new(big.Int).Mul(x1, z2z2)
-	u1.Mod(u1, curve.P)
+	u1.Mod(u1, pBig)
 	u2 := new(big.Int).Mul(x2, z1z1)
-	u2.Mod(u2, curve.P)
+	u2.Mod(u2, pBig)
 	h := new(big.Int).Sub(u2, u1)
 	xEqual := h.Sign() == 0
 	if h.Sign() == -1 {
-		h.Add(h, curve.P)
+		h.Add(h, pBig)
 	}
 	i := new(big.Int).Lsh(h, 1)
 	i.Mul(i, i)
@@ -151,13 +154,13 @@ func (curve *CurveParams) addJacobian(x1, y1, z1, x2, y2, z2 *big.Int) (*big.Int
 
 	s1 := new(big.Int).Mul(y1, z2)
 	s1.Mul(s1, z2z2)
-	s1.Mod(s1, curve.P)
+	s1.Mod(s1, pBig)
 	s2 := new(big.Int).Mul(y2, z1)
 	s2.Mul(s2, z1z1)
-	s2.Mod(s2, curve.P)
+	s2.Mod(s2, pBig)
 	r := new(big.Int).Sub(s2, s1)
 	if r.Sign() == -1 {
-		r.Add(r, curve.P)
+		r.Add(r, pBig)
 	}
 	yEqual := r.Sign() == 0
 	if xEqual && yEqual {
@@ -171,7 +174,7 @@ func (curve *CurveParams) addJacobian(x1, y1, z1, x2, y2, z2 *big.Int) (*big.Int
 	x3.Sub(x3, j)
 	x3.Sub(x3, v)
 	x3.Sub(x3, v)
-	x3.Mod(x3, curve.P)
+	x3.Mod(x3, pBig)
 
 	y3.Set(r)
 	v.Sub(v, x3)
@@ -179,14 +182,14 @@ func (curve *CurveParams) addJacobian(x1, y1, z1, x2, y2, z2 *big.Int) (*big.Int
 	s1.Mul(s1, j)
 	s1.Lsh(s1, 1)
 	y3.Sub(y3, s1)
-	y3.Mod(y3, curve.P)
+	y3.Mod(y3, pBig)
 
 	z3.Add(z1, z2)
 	z3.Mul(z3, z3)
 	z3.Sub(z3, z1z1)
 	z3.Sub(z3, z2z2)
 	z3.Mul(z3, h)
-	z3.Mod(z3, curve.P)
+	z3.Mod(z3, pBig)
 
 	return x3, y3, z3
 }
@@ -200,13 +203,14 @@ func (curve *CurveParams) Double(x1, y1 *big.Int) (*big.Int, *big.Int) {
 // returns its double, also in Jacobian form.
 func (curve *CurveParams) doubleJacobian(x, y, z *big.Int) (*big.Int, *big.Int, *big.Int) {
 	// See https://hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
+	pBig := new(big.Int).SetBytes(curve.P.Bytes())
 	delta := new(big.Int).Mul(z, z)
-	delta.Mod(delta, curve.P)
+	delta.Mod(delta, pBig)
 	gamma := new(big.Int).Mul(y, y)
-	gamma.Mod(gamma, curve.P)
+	gamma.Mod(gamma, pBig)
 	alpha := new(big.Int).Sub(x, delta)
 	if alpha.Sign() == -1 {
-		alpha.Add(alpha, curve.P)
+		alpha.Add(alpha, pBig)
 	}
 	alpha2 := new(big.Int).Add(x, delta)
 	alpha.Mul(alpha, alpha2)
@@ -218,41 +222,41 @@ func (curve *CurveParams) doubleJacobian(x, y, z *big.Int) (*big.Int, *big.Int, 
 
 	x3 := new(big.Int).Mul(alpha, alpha)
 	beta8 := new(big.Int).Lsh(beta, 3)
-	beta8.Mod(beta8, curve.P)
+	beta8.Mod(beta8, pBig)
 	x3.Sub(x3, beta8)
 	if x3.Sign() == -1 {
-		x3.Add(x3, curve.P)
+		x3.Add(x3, pBig)
 	}
-	x3.Mod(x3, curve.P)
+	x3.Mod(x3, pBig)
 
 	z3 := new(big.Int).Add(y, z)
 	z3.Mul(z3, z3)
 	z3.Sub(z3, gamma)
 	if z3.Sign() == -1 {
-		z3.Add(z3, curve.P)
+		z3.Add(z3, pBig)
 	}
 	z3.Sub(z3, delta)
 	if z3.Sign() == -1 {
-		z3.Add(z3, curve.P)
+		z3.Add(z3, pBig)
 	}
-	z3.Mod(z3, curve.P)
+	z3.Mod(z3, pBig)
 
 	beta.Lsh(beta, 2)
 	beta.Sub(beta, x3)
 	if beta.Sign() == -1 {
-		beta.Add(beta, curve.P)
+		beta.Add(beta, pBig)
 	}
 	y3 := alpha.Mul(alpha, beta)
 
 	gamma.Mul(gamma, gamma)
 	gamma.Lsh(gamma, 3)
-	gamma.Mod(gamma, curve.P)
+	gamma.Mod(gamma, pBig)
 
 	y3.Sub(y3, gamma)
 	if y3.Sign() == -1 {
-		y3.Add(y3, curve.P)
+		y3.Add(y3, pBig)
 	}
-	y3.Mod(y3, curve.P)
+	y3.Mod(y3, pBig)
 
 	return x3, y3, z3
 }
@@ -275,7 +279,7 @@ func (curve *CurveParams) ScalarMult(Bx, By *big.Int, k []byte) (*big.Int, *big.
 }
 
 func (curve *CurveParams) ScalarBaseMult(k []byte) (*big.Int, *big.Int) {
-	return curve.ScalarMult(curve.Gx, curve.Gy, k)
+	return curve.ScalarMult(new(big.Int).SetBytes(curve.Gx.Bytes()), new(big.Int).SetBytes(curve.Gy.Bytes()), k)
 }
 
 var mask = []byte{0xff, 0x1, 0x3, 0x7, 0xf, 0x1f, 0x3f, 0x7f}
@@ -301,7 +305,7 @@ func GenerateKey(curve Curve, rand io.Reader) (priv []byte, x, y *big.Int, err e
 		priv[1] ^= 0x42
 
 		// If the scalar is out of range, sample another random number.
-		if new(big.Int).SetBytes(priv).Cmp(N) >= 0 {
+		if new(big.Int).SetBytes(priv).Cmp(new(big.Int).SetBytes(N.Bytes())) >= 0 {
 			continue
 		}
 
@@ -345,7 +349,7 @@ func Unmarshal(curve Curve, data []byte) (x, y *big.Int) {
 	if data[0] != 4 { // uncompressed form
 		return nil, nil
 	}
-	p := curve.Params().P
+	p := new(big.Int).SetBytes(curve.Params().P.Bytes())
 	x = new(big.Int).SetBytes(data[1 : 1+byteLen])
 	y = new(big.Int).SetBytes(data[1+byteLen:])
 	if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
@@ -368,7 +372,7 @@ func UnmarshalCompressed(curve Curve, data []byte) (x, y *big.Int) {
 	if data[0] != 2 && data[0] != 3 { // compressed form
 		return nil, nil
 	}
-	p := curve.Params().P
+	p := new(big.Int).SetBytes(curve.Params().P.Bytes())
 	x = new(big.Int).SetBytes(data[1:])
 	if x.Cmp(p) >= 0 {
 		return nil, nil
@@ -399,25 +403,41 @@ func initAll() {
 	initP521()
 }
 
+func fromString(s string, base int) (*safenum.Nat, bool) {
+	x, ok := new(big.Int).SetString(s, base)
+	if !ok {
+		return nil, false
+	}
+	return new(safenum.Nat).SetBytes(x.Bytes()), true
+}
+
+func modFromString(s string, base int) (*safenum.Modulus, bool) {
+	x, ok := new(big.Int).SetString(s, base)
+	if !ok {
+		return nil, false
+	}
+	return safenum.ModulusFromBytes(x.Bytes()), true
+}
+
 func initP384() {
 	// See FIPS 186-3, section D.2.4
 	p384 = &CurveParams{Name: "P-384"}
-	p384.P, _ = new(big.Int).SetString("39402006196394479212279040100143613805079739270465446667948293404245721771496870329047266088258938001861606973112319", 10)
-	p384.N, _ = new(big.Int).SetString("39402006196394479212279040100143613805079739270465446667946905279627659399113263569398956308152294913554433653942643", 10)
-	p384.B, _ = new(big.Int).SetString("b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef", 16)
-	p384.Gx, _ = new(big.Int).SetString("aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7", 16)
-	p384.Gy, _ = new(big.Int).SetString("3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f", 16)
+	p384.P, _ = modFromString("39402006196394479212279040100143613805079739270465446667948293404245721771496870329047266088258938001861606973112319", 10)
+	p384.N, _ = modFromString("39402006196394479212279040100143613805079739270465446667946905279627659399113263569398956308152294913554433653942643", 10)
+	p384.B, _ = fromString("b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef", 16)
+	p384.Gx, _ = fromString("aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab7", 16)
+	p384.Gy, _ = fromString("3617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f", 16)
 	p384.BitSize = 384
 }
 
 func initP521() {
 	// See FIPS 186-3, section D.2.5
 	p521 = &CurveParams{Name: "P-521"}
-	p521.P, _ = new(big.Int).SetString("6864797660130609714981900799081393217269435300143305409394463459185543183397656052122559640661454554977296311391480858037121987999716643812574028291115057151", 10)
-	p521.N, _ = new(big.Int).SetString("6864797660130609714981900799081393217269435300143305409394463459185543183397655394245057746333217197532963996371363321113864768612440380340372808892707005449", 10)
-	p521.B, _ = new(big.Int).SetString("051953eb9618e1c9a1f929a21a0b68540eea2da725b99b315f3b8b489918ef109e156193951ec7e937b1652c0bd3bb1bf073573df883d2c34f1ef451fd46b503f00", 16)
-	p521.Gx, _ = new(big.Int).SetString("c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66", 16)
-	p521.Gy, _ = new(big.Int).SetString("11839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650", 16)
+	p521.P, _ = modFromString("6864797660130609714981900799081393217269435300143305409394463459185543183397656052122559640661454554977296311391480858037121987999716643812574028291115057151", 10)
+	p521.N, _ = modFromString("6864797660130609714981900799081393217269435300143305409394463459185543183397655394245057746333217197532963996371363321113864768612440380340372808892707005449", 10)
+	p521.B, _ = fromString("051953eb9618e1c9a1f929a21a0b68540eea2da725b99b315f3b8b489918ef109e156193951ec7e937b1652c0bd3bb1bf073573df883d2c34f1ef451fd46b503f00", 16)
+	p521.Gx, _ = fromString("c6858e06b70404e9cd9e3ecb662395b4429c648139053fb521f828af606b4d3dbaa14b5e77efe75928fe1dc127a2ffa8de3348b3c1856a429bf97e7e31c2e5bd66", 16)
+	p521.Gy, _ = fromString("11839296a789a3bc0045c8a5fb42c7d1bd998f54449579b446817afbd17273e662c97ee72995ef42640c550b9013fad0761353c7086a272c24088be94769fd16650", 16)
 	p521.BitSize = 521
 }
 
