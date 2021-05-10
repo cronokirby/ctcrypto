@@ -58,26 +58,26 @@ func (curve *CurveParams) Params() *CurveParams {
 }
 
 // polynomial returns x³ - 3x + b.
-func (curve *CurveParams) polynomial(x *big.Int) *big.Int {
-	x3 := new(big.Int).Mul(x, x)
-	x3.Mul(x3, x)
+func (curve *CurveParams) polynomial(x *safenum.Nat) *safenum.Nat {
+	x3 := new(safenum.Nat).ModMul(x, x, curve.P)
+	x3.ModMul(x3, x, curve.P)
 
-	threeX := new(big.Int).Lsh(x, 1)
-	threeX.Add(threeX, x)
+	threeX := new(safenum.Nat).ModAdd(x, x, curve.P)
+	threeX.ModAdd(threeX, x, curve.P)
 
-	x3.Sub(x3, threeX)
-	x3.Add(x3, new(big.Int).SetBytes(curve.B.Bytes()))
-	x3.Mod(x3, new(big.Int).SetBytes(curve.P.Bytes()))
+	x3.ModSub(x3, threeX, curve.P)
+	x3.ModAdd(x3, curve.B, curve.P)
 
 	return x3
 }
 
 func (curve *CurveParams) IsOnCurve(x, y *big.Int) bool {
 	// y² = x³ - 3x + b
-	y2 := new(big.Int).Mul(y, y)
-	y2.Mod(y2, new(big.Int).SetBytes(curve.P.Bytes()))
+	yNat := new(safenum.Nat).SetBytes(y.Bytes())
+	y2 := new(safenum.Nat).ModMul(yNat, yNat, curve.P)
+	xNat := new(safenum.Nat).SetBytes(x.Bytes())
 
-	return curve.polynomial(x).Cmp(y2) == 0
+	return curve.polynomial(xNat).Cmp(y2) == 0
 }
 
 // zForAffine returns a Jacobian Z value for the affine point (x, y). If x and
@@ -378,7 +378,7 @@ func UnmarshalCompressed(curve Curve, data []byte) (x, y *big.Int) {
 		return nil, nil
 	}
 	// y² = x³ - 3x + b
-	y = curve.Params().polynomial(x)
+	y = new(big.Int).SetBytes(curve.Params().polynomial(new(safenum.Nat).SetBytes(x.Bytes())).Bytes())
 	y = y.ModSqrt(y, p)
 	if y == nil {
 		return nil, nil
