@@ -1,5 +1,5 @@
-github.com/cronokirby/safenum v0.11.0 h1:XD9ikQk+SuCwQ4LuYllHCQd2/LBUIEx/2QH3pckbMMo=
-github.com/cronokirby/safenum v0.11.0/go.mod h1:AWp82xwEqKcnrpJPXPa1m0gF/OY8dzgL17ubUBnVygA=
+github.com/cronokirby/safenum v0.12.0 h1:BxVX8+1f8nOOwEBmzpPB2AWaBPyIBYw2ko739wnHDGA=
+github.com/cronokirby/safenum v0.12.0/go.mod h1:AWp82xwEqKcnrpJPXPa1m0gF/OY8dzgL17ubUBnVygA=
 golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf h1:B2n+Zi5QeYRDAEodEu72OS36gmTWjgpXr2+cWcBW90o=
 golang.org/x/crypto v0.0.0-20210506145944-38f3c27a63bf/go.mod h1:P+XmwS30IXTQdn5tA2iutPOUgjI07+tq3H3K9MVA1s8=
 golang.org/x/net v0.0.0-20210226172049-e18ecbb05110/go.mod h1:m0MpNAwzfU5UDzcl9v0D8zg8gWTRqZa9RBIspLL5mdg=
