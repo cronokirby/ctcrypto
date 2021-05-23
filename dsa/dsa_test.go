@@ -174,6 +174,6 @@ func BenchmarkSigning(b *testing.B) {
 func BenchmarkParameterGeneration(b *testing.B) {
 	params := new(Parameters)
 	for i := 0; i < b.N; i++ {
-		GenerateParameters(params, rand.Reader, L1024N160)
+		GenerateParameters(params, rand.Reader, L2048N256)
 	}
 }
